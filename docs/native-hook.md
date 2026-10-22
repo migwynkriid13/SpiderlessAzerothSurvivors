@@ -1,9 +1,10 @@
-# Native hooks: Azeroth Survivors 0.110.0
+# Native hooks: Azeroth Survivors
 
 The reference examined is Windows x64, preferred image base `0x140000000`,
-SHA-256 `e069bf3152f8d8f7160d66388907fc181c733bd170aa150d3b7ff7adf251e048`.
-All addresses below were recovered from these exact installed bytes on
-2026-10-22 and are provenance coordinates. The runtime does not watch or compare
+SHA-256 `e069bf3152f8d8f7160d66388907fc181c733bd170aa150d3b7ff7adf251e048`
+(0.110.0). Unless a section identifies a later target, addresses below refer to
+those bytes examined on 2026-10-22 and are provenance coordinates.
+The runtime does not watch or compare
 the EXE hash, version or fixed addresses. It locates the read boundary with the
 unique masked instruction signature in `include/target_profile.hpp`.
 
@@ -287,7 +288,7 @@ and its decoded `CALL rel32` must reach the discovered creator:
 | Ordinary enemy (including ordinary elite) | `145938feb` |
 | Ward | `145910c25` |
 
-The rank Boolean is insufficient: ordinary elites can set it too. Installation
+The rank Boolean is insufficient: ordinary elites can set it too. Scaling setup
 also checks that all direct calls to the creator belong to these four contexts.
 An unrecognized runtime caller stops the process. Role discovery uses native
 instruction contracts; none of these reference addresses is used at runtime.
@@ -326,6 +327,51 @@ python -B tools/verify_scale_hooks.py /path/to/AzerothSurvivors.exe
 
 The verifier needs no game launch, compiler, committed EXE or fixed hash gate.
 
+## 0.112.0 compatibility and scaling fallback
+
+The updated installed target is 0.112.0, 140,514,816 bytes, SHA-256
+`dc10453398ceb398076f6d3b6ac7859470de2ff7ccd68ac1d00a02f9f1e5209a`.
+The old DLL's asset reader, availability and allocator signatures still match
+uniquely. Its scaling creator, guardian-call and ordinary-call signatures do
+not match because they require unrelated internal displacements to stay fixed:
+
+| Signature operand | 0.110.0 | 0.112.0 | Ignored signature byte offsets |
+| --- | --- | --- | --- |
+| Creator's internal Game level member | `+0x4e8` | `+0x4e0` | 62–65 |
+| Guardian's local position address | `[rbp+0x18]` | `[rbp+0x20]` | 8 |
+| Guardian's post-call Game clock member | `+0xa54` | `+0xa4c` | 57–60 |
+| Ordinary creator's post-call Game clock member | `+0xa54` | `+0xa4c` | 59–62 |
+
+These offsets are used by the native functions, not by this DLL. The hooks
+forward their original arguments and native code continues using its own
+current offsets. The revised masks ignore exactly those 13 operand bytes and
+external call displacements. They keep the opcodes, registers, argument stack
+slots, prologues and inner scale-field anchors exact. Both signature and mask
+bytes are zero for each wildcard, matching the runtime comparison contract.
+
+The updated creator is `14593c570..14593d2e2`; the appearance publisher is
+`145951ab0..145951cb8`. Both retain their prior lengths, calling convention,
+complete displaced prologues and scale encoding. Whole-owner instruction
+comparison found only relocated calls/data and native Game member offsets
+shifted by eight bytes. The updated role calls are guardian `145906c44`, ward
+`145916255`, boss `14593b3eb`, ordinary `14593e2cb`. Independent static
+verification of the revised masks confirms both unique entries, both internal
+anchors, all four unique caller contexts/targets and no other direct creator
+calls. These addresses and the hash are research evidence, never runtime gates.
+
+Scaling setup is now optional and separate from the required replacement path.
+Before modifying any entry, prepare the required asset hooks and attempt all
+scaling discovery, validation and trampoline preparation. If scaling preparation
+fails, log its reason and install only the independently verified asset hooks.
+No scaling detour is written in that case: crab models remain enabled at the
+game's original sizes. If scaling preparation succeeds, install all hooks and
+keep the requested 4×/2× policy. An error while writing any detour remains fatal;
+the mod never continues from partially written scaling hooks.
+
+This avoids making optional visual-size compatibility a requirement for crab
+replacement. It does not make arbitrary native updates compatible: changes to
+the required archive/allocator contract or DBC schema still stop startup.
+
 ## Evidence limits
 
 Static evidence came from the complete current declared-unwind instruction
@@ -351,8 +397,10 @@ The player subsequently confirmed rendered crab models using WoWSilicon on
 macOS. This confirms the existing replacement path, not exhaustive coverage of
 every creature, animation or zone.
 
-The new creature-role scaling hooks are source changes that have not been
-compiled or executed. Their current evidence is static inspection of the
-installed EXE plus source regression fixtures. Their first build remains the
-main-only pipeline after PR review and merge. Live size and restoration behavior
-need in-game validation with that resulting DLL.
+The 4×/2× scaling revision compiled and passed its C++ regression target in the
+[main build](https://github.com/migwynkriid13/SpiderlessAzerothSurvivors/actions/runs/39861026750).
+The 0.112.0 compatibility masks and optional-scaling fallback are source changes
+that have not been compiled or executed. Their evidence is static inspection of
+the updated EXE and portable regression fixtures. Their first build remains the
+main-only pipeline after PR review and merge. Live behavior still needs in-game
+validation with that resulting DLL.
