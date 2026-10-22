@@ -1,115 +1,89 @@
 # Spiderless Azeroth Survivors
 
-Windows x64 accessibility mod that replaces spider and spider-like creature
-appearances with randomly selected Vanilla crab colors. Built for the original
-Azeroth Survivors Windows game; this is a DLL mod, not a rebuilt game or Lua addon.
+Windows x64 accessibility mod that replaces spider-like creature appearances
+with Vanilla crabs. **Install one file: `avrt.dll` beside `AzerothSurvivors.exe`,
+then start the game normally.**
 
-**Status: the automatic-loader revision is awaiting its first Windows build and
-in-game validation.** The earlier launcher-based implementation compiled in
-[the main workflow](https://github.com/migwynkriid13/SpiderlessAzerothSurvivors/actions/runs/39852896854);
-that does not validate this new loading path or establish a playable release.
+The crab model, four skins and reflection texture are embedded in the DLL.
+You do not need another WoW client, an asset preparation step, a separate MPQ,
+a launcher or a DLL list. The mod does not download assets or extract them onto
+disk at runtime. Existing game files in the adjacent `Data` directory are used
+for the rest of the game as usual.
 
-## What it changes
+**Status: this single-file revision is awaiting its first Windows build and
+in-game validation. There is no verified playable release yet.**
 
-The DLL remaps creature appearance records by their model paths. It includes
-spiders, tarantulas, crypt fiends, crypt lords and mechanical spider tanks, across
-ordinary enemies, bosses and any other actors using those appearances. Current
-0.110.0 data contains 120 matching display records across 13 model paths.
-[The coverage inventory](docs/spider-coverage.json) records the inspected zones
-and source data.
+## Install
 
-Vanilla has one crab mesh with four skins: Bronze, Ivory, Saphire and Vermillian.
-Each original appearance gets a random skin when the game starts and keeps it
-throughout that session. Creatures sharing the same original appearance share a
-color; there is no separate random roll per spawned creature.
-
-Display IDs, size multipliers, alpha and non-appearance metadata stay intact.
-The model and all skin slots change together. Model geometry can affect derived
-collision/attachment behavior; this still requires game testing. Names, sounds,
-icons, web effects and world scenery are outside this creature-model change.
-Direct model loads that bypass the creature DBC are outside this hook's coverage.
-
-## Required crab assets
-
-The supplied Azeroth Survivors MPQs list crab appearances but omit the crab mesh
-and four skins. You need locally owned, compatible **Vanilla 1.12 game data** to
-prepare those files. Nothing in this repository downloads or ships game assets.
-
-With Python 3.10 or newer, run:
-
-```powershell
-py -3 tools/prepare_crab_assets.py --data-dir "D:\WoW-1.12\Data" --output patch-Z.MPQ
-```
-
-Copy the resulting `patch-Z.MPQ` into Azeroth Survivors' `Data` folder. The tool
-refuses to overwrite a different existing output. See
-[asset preparation](docs/asset-preparation.md) for archive options and supported
-formats. Extraction against real crab assets remains unverified because those
-assets were absent from the available local data.
-
-## Install and run after a release
-
-1. Download **`avrt.dll`** from the repository's
+1. Download **`avrt.dll`** from
    [GitHub Releases](https://github.com/migwynkriid13/SpiderlessAzerothSurvivors/releases).
-2. Put it beside `AzerothSurvivors.exe`. Keep its exact filename `avrt.dll`.
-3. Install the prepared `Data/patch-Z.MPQ` described above.
-4. Start **`AzerothSurvivors.exe` normally**.
+2. Put it beside **`AzerothSurvivors.exe`**, keeping the filename `avrt.dll`.
+3. Start **`AzerothSurvivors.exe` normally**.
 
-No separate launcher, DLL list, injector, EXE modification or administrator
-rights are needed. The DLL uses the Windows AVRT library name already imported
-by the game, forwarding the three required AVRT functions to the real system
-library. Windows normally searches the EXE directory before System32 for this
-library. Custom DLL search policies, Wine overrides or another mod using
-`avrt.dll` can affect loading; do not overwrite a different existing `avrt.dll`.
-There is no mod-chaining support in this version.
+The game already imports the Windows AVRT library. This app-local proxy loads
+through that import and forwards the three required functions to the real
+system library. It initializes the mod before the game entrypoint, outside
+Windows DLL initialization and exception dispatch. No EXE modification on disk,
+registry change, administrator rights or separate process is required.
 
-During load, the proxy arms a temporary breakpoint at the EXE's entrypoint.
-After Windows finishes DLL initialization, a minimal exception handler redirects
-execution to a normal bootstrap function. That function restores the entrypoint,
-loads the real system AVRT library, initializes the spider replacement, then
-restores the game's original CPU context. Initialization runs before the game
-entrypoint and outside both `DllMain` and the exception handler.
+Custom DLL search policies, Wine overrides or another mod named `avrt.dll` can
+affect loading. Do not overwrite a different existing `avrt.dll`; mod chaining
+is not supported. Do not put this DLL in Windows system directories.
 
-`SpiderlessAzerothSurvivors.log` is created beside the game EXE, so that directory
-must be writable. On the first creature catalog read, the mod checks the crab
-mesh and four skins through the actual MPQ chain before remapping rows. Missing
-assets or incompatible tables stop the game with an error. Startup failures
-that occur before the bootstrap runs may produce Windows' DLL initialization
-error instead; no log is guaranteed in that early failure case.
+The mod writes `SpiderlessAzerothSurvivors.log` beside the game, so that folder
+must be writable. Initialization or compatibility failures stop startup with
+an error. Early DLL attach failures may produce Windows' DLL initialization
+error before the mod can create its log.
 
-Remove this mod's `avrt.dll` and `patch-Z.MPQ` to uninstall. Do not place the
-proxy in Windows' system directories. The mod changes process memory only; it
-does not edit the original EXE, saves or original MPQs. The crab overlay remains
-required: a DLL filename alone cannot supply assets absent from the game data.
+Delete this mod's `avrt.dll` to uninstall. Original EXE, saves and MPQs are not
+changed. If upgrading from the earlier source-only overlay design, its manually
+installed `patch-Z.MPQ` is no longer needed; the mod never creates an MPQ itself.
+
+## Replacement coverage
+
+The appearance policy identifies model paths containing `spider`, `tarantula`,
+`cryptfiend` or `cryptlord`, including mechanical spider tanks. The researched
+0.110.0 data contains 120 matching display records across 13 model paths,
+covering ordinary enemies and bosses in the
+[coverage inventory](docs/spider-coverage.json).
+
+Vanilla has one crab mesh with four colors: Bronze, Ivory, Saphire and
+Vermillian. Each source appearance receives a random color at startup, stable
+throughout the session. Creatures sharing an original appearance share a color;
+there is no separate random roll per spawned creature.
+
+The model, extra appearance and all skin slots change together. IDs, size
+multipliers, alpha, sounds and other metadata stay intact. Model geometry may
+affect derived collision/attachment behavior; this requires runtime validation.
+Names, icons, web effects, world scenery and direct model loads bypassing the
+creature DBC are outside this appearance change.
 
 ## Game updates
 
-There is **no EXE hash or version lock**. The mod searches executable sections
-for a unique masked asset-reader signature and checks the function boundary,
-prologue and live DBC structure. Model IDs are derived from the current model
-catalog instead of a fixed mob list.
+There is **no EXE hash or version lock**. Hook discovery uses unique masked
+instruction signatures and checks function boundaries, prologues, native byte
+allocation and DBC structure. Model IDs are derived from the current catalog.
+An absent, ambiguous or incompatible native boundary stops startup.
 
-Updates that preserve this function shape and ABI can work without changing the
-mod. An update that changes either may require a new signature or implementation;
-future compatibility has not been established. An absent or ambiguous signature
-stops startup. [Native hook evidence](docs/native-hook.md) records the inspected
-ABI and its limits. Reference hashes there identify research inputs only.
+Updates preserving these native contracts may remain compatible; arbitrary
+future versions are not guaranteed. See [native evidence](docs/native-hook.md).
+The reference hashes there identify research inputs only.
 
-## Build and contribute
+## Build and releases
 
-Development happens in pull requests. GitHub Actions builds the DLL and
-publishes a GitHub Release
-**only on pushes to `main`**, including merged PRs. PR pushes and PR creation do
-not start a build; there is no manual workflow trigger. Each revision can be
-reviewed before its main-branch build.
+Development happens through pull requests. Only a push to `main`, including a
+merged PR, builds and publishes a GitHub Release. PR pushes do not build, and
+there is no manual trigger. Releases contain standalone `avrt.dll`, a ZIP with
+documentation, and SHA-256 checksums tied to the exact source commit/build.
 
-After a successful main build, its GitHub Release contains standalone
-`avrt.dll`, a ZIP with the DLL/instructions/asset tools, and SHA-256 checksums.
-Each release points to its exact source commit and build. The same files remain
-available as an Actions artifact. No crab assets are included.
+The six crab inputs are tracked and compiled as Windows RCDATA resources.
+[Asset provenance](assets/crab/NOTICE.md) and the
+[manifest](assets/crab/manifest.json) record their source and hashes.
+[Embedded asset design](docs/asset-preparation.md) explains dependency checks
+and native ownership. No external asset source is needed to build this revision.
 
-For a deliberate local build on Windows, install Visual Studio 2022 or newer
-with Desktop development with C++, its Windows SDK, and CMake 3.25 or newer:
+For a deliberate local build, use Windows x64, Visual Studio 2022 or newer with
+Desktop development with C++ and the Windows SDK, plus CMake 3.25 or newer:
 
 ```powershell
 cmake -S . -B build -A x64
@@ -117,16 +91,12 @@ cmake --build build --config Release --parallel
 cmake --install build --config Release --prefix package
 ```
 
-No game files or external libraries are required to compile. Asset-tool tests
-run without compilation or game data:
+The standard-library Python checks run without compiling or launching a game:
 
 ```powershell
 py -3 -B -m unittest discover -s tools -p "test_*.py" -v
 ```
 
-Before calling a binary playable, validate automatic loading and AVRT
-forwarding, all four crab skins, animations, giant/boss scaling and the affected
-zones on Windows. The automatic-loader revision has not been compiled or run
-yet. No game launch or visual validation has been performed. The successful
-earlier launcher build does not test this proxy, breakpoint bootstrap or AVRT
-forwarding.
+Before calling a binary playable, validate automatic loading, AVRT forwarding,
+embedded mesh/skin reads, animation, giant/boss scaling and affected zones on
+Windows. This revision has not been compiled, loaded or visually tested yet.

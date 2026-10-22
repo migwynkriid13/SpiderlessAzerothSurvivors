@@ -26,7 +26,7 @@ jobs:
       - name: Configure x64
         run: cmake -S . -B build -A x64
 
-      - name: Test asset preparation
+      - name: Test bundled assets and archive parser
         run: python -B -m unittest discover -s tools -p "test_*.py" -v
 
       - name: Build release binaries
@@ -154,8 +154,10 @@ jobs:
             'Download avrt.dll below and place it beside AzerothSurvivors.exe without renaming it.'
             'Start AzerothSurvivors.exe normally; no separate launcher is needed.'
             ''
-            "Read the [installation instructions and crab asset requirements]($env:SOURCE_URL/README.md)."
-            'The ZIP includes the DLL, documentation, and asset preparation tools.'
+            'The crab model and all required textures are embedded in the DLL.'
+            'No separate MPQ, other WoW installation, launcher or asset download is needed.'
+            "Read the [installation instructions]($env:SOURCE_URL/README.md)."
+            'The ZIP includes the DLL, documentation, and embedded asset provenance.'
             'Download SHA256SUMS.txt to verify avrt.dll or the ZIP with SHA-256.'
             ''
             "Commit: $env:BUILD_SHA"

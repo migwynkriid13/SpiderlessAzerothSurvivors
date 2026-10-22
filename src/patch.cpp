@@ -2,6 +2,7 @@
 #include <bcrypt.h>
 
 #include "policy.hpp"
+#include "embedded_assets.hpp"
 #include "target_profile.hpp"
 
 #include <algorithm>
@@ -19,27 +20,22 @@
 namespace spiderless {
 namespace {
 using ReadFunction = NativeReadResult* (__fastcall *)(NativeReadResult*, void*, const char*, std::size_t);
+using ContainsFunction = bool (__fastcall *)(void*, const char*, std::size_t);
+using AllocateFunction = void* (__fastcall *)(std::size_t, std::size_t);
 constexpr auto kMaxRead = 32ULL * 1024 * 1024;
 constexpr auto kProbeBudget = 8ULL * 1024 * 1024;
 constexpr std::string_view kModelDb = "DBFilesClient\\CreatureModelData.dbc";
 constexpr std::string_view kDisplayDb = "DBFilesClient\\CreatureDisplayInfo.dbc";
-constexpr std::array<std::string_view, 5> kAssets{
-    "Creature\\Crab\\Crab.m2",
-    "Creature\\Crab\\CrabSkinBronze.blp",
-    "Creature\\Crab\\CrabSkinIvory.blp",
-    "Creature\\Crab\\CrabSkinSaphire.blp",
-    "Creature\\Crab\\CrabSkinVermillian.blp",
-};
-
 struct Runtime {
     ReadFunction original{};
+    ContainsFunction originalContains{};
+    AllocateFunction allocate{};
     std::uint64_t seed{};
     HANDLE log{INVALID_HANDLE_VALUE};
     SRWLOCK logLock = SRWLOCK_INIT;
     std::once_flag probes;
-    // Retain one metadata read and five asset probes for process lifetime.
-    // Rust owns these allocations; no DLL CRT or guessed host deallocator is used.
-    std::array<NativeReadResult, 6> retained{};
+    // The game owns this metadata allocation. Retain it for process lifetime.
+    NativeReadResult models{};
 };
 Runtime* g_runtime{};
 std::atomic<unsigned> g_initialize{0};
@@ -91,41 +87,40 @@ bool Valid(const NativeReadResult& read) noexcept {
 }
 
 void Probe(Runtime& state, void* chain) {
-    std::uint64_t total = 0;
-    const auto read = [&](NativeReadResult& out, std::string_view path) {
-        if (state.original(&out, chain, path.data(), path.size()) != &out || !Valid(out)) {
-            throw std::runtime_error("Required crab assets or creature DBC are missing. Prepare patch-Z.MPQ using the included tool and place it in the game's Data folder.");
-        }
-        total += out.capacity;
-        if (total > kProbeBudget) throw std::runtime_error("Crab asset probe exceeded its memory budget");
-    };
-    read(state.retained[0], kModelDb);
-    for (std::size_t i = 0; i < kAssets.size(); ++i) {
-        auto& out = state.retained[i + 1];
-        read(out, kAssets[i]);
-        if (out.size < 8) throw std::runtime_error("Crab asset is truncated");
-        if (i == 0) {
-            std::uint32_t version;
-            std::memcpy(&version, out.data + 4, 4);
-            if (std::memcmp(out.data, "MD20", 4) != 0 || (version != 256 && version != 257)) {
-                throw std::runtime_error("Crab mesh must be from a compatible Vanilla client");
-            }
-        } else if (std::memcmp(out.data, "BLP1", 4) != 0 && std::memcmp(out.data, "BLP2", 4) != 0) {
-            throw std::runtime_error("Crab skin has an unsupported format");
-        }
+    auto& out = state.models;
+    if (state.original(&out, chain, kModelDb.data(), kModelDb.size()) != &out || !Valid(out)) {
+        throw std::runtime_error("CreatureModelData is missing or incompatible");
     }
-    Log(state, "Crab mesh and four skins are readable through the game's actual archive chain.");
+    if (out.capacity > kProbeBudget) {
+        throw std::runtime_error("Creature model metadata exceeded its memory budget");
+    }
+    Log(state, "Creature model metadata is readable through the game's archive chain; crab assets are embedded in this DLL.");
+}
+
+bool __fastcall ContainsHook(void* chain, const char* path, std::size_t size) noexcept {
+    if (!FindEmbeddedAsset(path, size).empty()) return true;
+    return g_runtime->originalContains(chain, path, size);
 }
 
 NativeReadResult* __fastcall ReadHook(NativeReadResult* out, void* chain,
                                     const char* path, std::size_t size) noexcept {
     auto& state = *g_runtime;
+    if (const auto bytes = FindEmbeddedAsset(path, size); !bytes.empty()) {
+        // The native reader's own Vec<u8> clone uses this exact verified host
+        // allocator with alignment 1. The game receives ownership and frees it
+        // normally; no static resource pointer or DLL CRT allocation escapes.
+        auto* memory = static_cast<std::uint8_t*>(state.allocate(bytes.size(), 1));
+        if (!memory) Stop(state, "Cannot allocate an embedded crab asset");
+        std::memcpy(memory, bytes.data(), bytes.size());
+        *out = {bytes.size(), memory, bytes.size()};
+        return out;
+    }
     auto* returned = state.original(out, chain, path, size);
     if (!SamePath(path, size, kDisplayDb)) return returned;
     try {
         if (returned != out || !Valid(*out)) throw std::runtime_error("CreatureDisplayInfo read failed");
         std::call_once(state.probes, [&] { Probe(state, chain); });
-        const auto& models = state.retained[0];
+        const auto& models = state.models;
         const auto count = RemapDisplayInfo(
             {models.data, static_cast<std::size_t>(models.size)},
             {out->data, static_cast<std::size_t>(out->size)}, state.seed);
@@ -138,56 +133,178 @@ NativeReadResult* __fastcall ReadHook(NativeReadResult* out, void* chain,
     return returned;
 }
 
-std::uint8_t* FindReadEntry() {
-    auto* base = reinterpret_cast<std::uint8_t*>(GetModuleHandleW(nullptr));
-    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew < 0 || dos->e_lfanew > 0x100000) {
-        throw std::runtime_error("Invalid game PE header");
+bool Matches(std::span<const std::uint8_t> bytes,
+             std::span<const std::uint8_t> signature,
+             std::span<const std::uint8_t> mask) noexcept {
+    if (bytes.size() < signature.size() || mask.size() != signature.size()) return false;
+    for (std::size_t i = 0; i < signature.size(); ++i) {
+        if ((bytes[i] & mask[i]) != signature[i]) return false;
     }
-    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
-    if (nt->Signature != IMAGE_NT_SIGNATURE || nt->FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64 ||
-        nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC ||
-        nt->FileHeader.SizeOfOptionalHeader != sizeof(IMAGE_OPTIONAL_HEADER64) ||
-        nt->FileHeader.NumberOfSections > 96) {
-        throw std::runtime_error("Expected a Windows x64 PE image");
-    }
-    const auto imageSize = nt->OptionalHeader.SizeOfImage;
-    auto* sections = IMAGE_FIRST_SECTION(nt);
-    std::uint8_t* match = nullptr;
-    for (unsigned i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
-        const auto& section = sections[i];
-        const auto size = section.Misc.VirtualSize;
-        if (!(section.Characteristics & IMAGE_SCN_MEM_EXECUTE)) continue;
-        if (section.VirtualAddress > imageSize || size > imageSize - section.VirtualAddress ||
-            size < kReadFileSignature.size()) continue;
-        auto* start = base + section.VirtualAddress;
-        for (std::size_t at = 0; at <= size - kReadFileSignature.size(); ++at) {
-            if (start[at] != kReadFileSignature[0]) continue;
-            bool equal = true;
-            for (std::size_t j = 1; j < kReadFileSignature.size(); ++j) {
-                if ((start[at + j] & kReadFileSignatureMask[j]) != kReadFileSignature[j]) {
-                    equal = false;
-                    break;
-                }
+    return true;
+}
+
+class NativeImage {
+public:
+    NativeImage() {
+        base_ = reinterpret_cast<std::uint8_t*>(GetModuleHandleW(nullptr));
+        const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base_);
+        if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew < 0 || dos->e_lfanew > 0x100000) {
+            throw std::runtime_error("Invalid game PE header");
+        }
+        nt_ = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base_ + dos->e_lfanew);
+        if (nt_->Signature != IMAGE_NT_SIGNATURE || nt_->FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64 ||
+            nt_->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC ||
+            nt_->FileHeader.SizeOfOptionalHeader != sizeof(IMAGE_OPTIONAL_HEADER64) ||
+            !nt_->FileHeader.NumberOfSections || nt_->FileHeader.NumberOfSections > 96) {
+            throw std::runtime_error("Expected a Windows x64 PE image");
+        }
+        size_ = nt_->OptionalHeader.SizeOfImage;
+        const auto* sections = IMAGE_FIRST_SECTION(nt_);
+        if (!Inside(sections, sizeof(IMAGE_SECTION_HEADER) * nt_->FileHeader.NumberOfSections)) {
+            throw std::runtime_error("Game PE section table is out of bounds");
+        }
+        for (unsigned i = 0; i < nt_->FileHeader.NumberOfSections; ++i) {
+            if (sections[i].VirtualAddress > size_ ||
+                sections[i].Misc.VirtualSize > size_ - sections[i].VirtualAddress) {
+                throw std::runtime_error("Game PE section is out of bounds");
             }
-            if (!equal) continue;
-            if (match) throw std::runtime_error("Asset reader signature is ambiguous after this game update");
-            match = start + at;
         }
     }
-    if (!match) throw std::runtime_error("Cannot locate a compatible asset reader after this game update");
 
-    // The match must be the beginning of a registered native function, not
-    // matching bytes inside another function or data in an executable section.
-    DWORD64 unwindBase = 0;
-    const auto* entry = RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(match), &unwindBase, nullptr);
-    if (!entry || unwindBase != reinterpret_cast<DWORD64>(base) ||
-        entry->BeginAddress != static_cast<DWORD>(match - base) ||
-        entry->EndAddress - entry->BeginAddress < kReadFileSignature.size() ||
-        std::memcmp(match, kReadFilePrologue.data(), kReadFilePrologue.size()) != 0) {
-        throw std::runtime_error("Asset reader function boundary/prologue is incompatible");
+    bool Inside(const void* address, std::size_t length) const noexcept {
+        const auto value = reinterpret_cast<std::uintptr_t>(address);
+        const auto base = reinterpret_cast<std::uintptr_t>(base_);
+        return value >= base && value - base <= size_ && length <= size_ - (value - base);
     }
-    return match;
+
+    bool Executable(const void* address, std::size_t length) const noexcept {
+        if (!Inside(address, length)) return false;
+        const auto rva = reinterpret_cast<const std::uint8_t*>(address) - base_;
+        const auto* sections = IMAGE_FIRST_SECTION(nt_);
+        for (unsigned i = 0; i < nt_->FileHeader.NumberOfSections; ++i) {
+            const auto& section = sections[i];
+            if (!(section.Characteristics & IMAGE_SCN_MEM_EXECUTE) || rva < section.VirtualAddress) continue;
+            const auto offset = rva - section.VirtualAddress;
+            if (offset <= section.Misc.VirtualSize && length <= section.Misc.VirtualSize - offset) return true;
+        }
+        return false;
+    }
+
+    std::span<const std::uint8_t> Function(std::uint8_t* address, std::size_t minimum) const {
+        if (!Executable(address, minimum)) throw std::runtime_error("Native function is outside executable image sections");
+        DWORD64 unwindBase = 0;
+        const auto* entry = RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(address), &unwindBase, nullptr);
+        if (!entry || unwindBase != reinterpret_cast<DWORD64>(base_) ||
+            entry->BeginAddress != static_cast<DWORD>(address - base_) ||
+            entry->EndAddress < entry->BeginAddress ||
+            entry->EndAddress - entry->BeginAddress < minimum ||
+            !Executable(address, entry->EndAddress - entry->BeginAddress)) {
+            throw std::runtime_error("Native function boundary is incompatible after this game update");
+        }
+        return {address, entry->EndAddress - entry->BeginAddress};
+    }
+
+    std::uint8_t* Find(std::span<const std::uint8_t> signature,
+                       std::span<const std::uint8_t> mask, const char* error) const {
+        std::uint8_t* match = nullptr;
+        const auto* sections = IMAGE_FIRST_SECTION(nt_);
+        for (unsigned i = 0; i < nt_->FileHeader.NumberOfSections; ++i) {
+            const auto& section = sections[i];
+            if (!(section.Characteristics & IMAGE_SCN_MEM_EXECUTE)) continue;
+            const auto length = section.Misc.VirtualSize;
+            if (length < signature.size()) continue;
+            auto* start = base_ + section.VirtualAddress;
+            for (std::size_t at = 0; at <= length - signature.size(); ++at) {
+                if (start[at] != signature.front() || !Matches({start + at, signature.size()}, signature, mask)) continue;
+                if (match) throw std::runtime_error(error);
+                match = start + at;
+            }
+        }
+        if (!match) throw std::runtime_error(error);
+        Function(match, signature.size());
+        return match;
+    }
+
+    std::uint8_t* Relative(std::uint8_t* instruction, std::uint8_t opcode) const {
+        if (!Executable(instruction, 5) || instruction[0] != opcode) {
+            throw std::runtime_error("Native relative call/branch is incompatible");
+        }
+        std::int32_t displacement;
+        std::memcpy(&displacement, instruction + 1, sizeof(displacement));
+        const auto target = reinterpret_cast<std::uintptr_t>(instruction) + 5 + displacement;
+        auto* result = reinterpret_cast<std::uint8_t*>(target);
+        if (!Executable(result, 1)) throw std::runtime_error("Native call target is outside executable image sections");
+        return result;
+    }
+
+    bool Reaches(std::uint8_t* instruction, std::uint8_t* expected) const {
+        auto* target = Relative(instruction, 0xe8);
+        if (target == expected) return true;
+        // Rust emits one JMP thunk for its global allocation entrypoints.
+        return target[0] == 0xe9 && Relative(target, 0xe9) == expected;
+    }
+
+    void Import(std::uint8_t* instruction, std::size_t displacementOffset,
+                std::size_t instructionLength, const char* expected) const {
+        if (!Executable(instruction, instructionLength)) throw std::runtime_error("Native allocator import instruction is out of bounds");
+        std::int32_t displacement;
+        std::memcpy(&displacement, instruction + displacementOffset, sizeof(displacement));
+        auto* slot = reinterpret_cast<const void*>(reinterpret_cast<std::uintptr_t>(instruction) + instructionLength + displacement);
+        if (!Inside(slot, sizeof(void*))) throw std::runtime_error("Native allocator import slot is out of bounds");
+        FARPROC imported;
+        std::memcpy(&imported, slot, sizeof(imported));
+        const auto system = GetModuleHandleW(L"kernel32.dll");
+        if (!system || !imported || imported != GetProcAddress(system, expected)) {
+            throw std::runtime_error("Native allocator no longer uses compatible Windows heap imports");
+        }
+    }
+
+private:
+    std::uint8_t* base_{};
+    const IMAGE_NT_HEADERS64* nt_{};
+    std::size_t size_{};
+};
+
+std::uint8_t* FindInside(std::span<const std::uint8_t> function,
+                         std::span<const std::uint8_t> signature,
+                         std::span<const std::uint8_t> mask) {
+    const std::uint8_t* match = nullptr;
+    if (function.size() >= signature.size()) {
+        for (std::size_t i = 0; i <= function.size() - signature.size(); ++i) {
+            if (!Matches(function.subspan(i), signature, mask)) continue;
+            if (match) throw std::runtime_error("Native byte-vector ownership signature is ambiguous");
+            match = function.data() + i;
+        }
+    }
+    if (!match) throw std::runtime_error("Native byte-vector ownership signature is missing");
+    return const_cast<std::uint8_t*>(match);
+}
+
+AllocateFunction FindAllocator(const NativeImage& image, std::uint8_t* read) {
+    auto* allocate = image.Find(kAllocateSignature, kAllocateSignatureMask,
+        "Cannot uniquely locate a compatible native allocator after this game update");
+    auto* deallocate = image.Find(kDeallocateSignature, kDeallocateSignatureMask,
+        "Cannot uniquely locate a compatible native deallocator after this game update");
+    auto* heap = image.Relative(allocate + 30, 0xe9);
+    if (image.Relative(allocate + 48, 0xe8) != heap ||
+        !Matches(image.Function(heap, kHeapAllocateSignature.size()), kHeapAllocateSignature, kHeapAllocateSignatureMask)) {
+        throw std::runtime_error("Native allocator's heap helper is incompatible");
+    }
+    image.Import(heap + 17, 2, 6, "GetProcessHeap");
+    image.Import(heap + 43, 3, 7, "HeapAlloc");
+    image.Import(deallocate + 24, 2, 6, "GetProcessHeap");
+    image.Import(deallocate + 44, 3, 7, "HeapFree");
+
+    // Finding a System allocator somewhere in the image is insufficient: the
+    // active read path must clone/drop byte vectors through these functions.
+    auto* cachedRead = image.Relative(read + 53, 0xe8);
+    const auto cache = image.Function(cachedRead, kByteCloneSignature.size());
+    auto* clone = FindInside(cache, kByteCloneSignature, kByteCloneSignatureMask);
+    auto* drop = FindInside(cache, kByteDropSignature, kByteDropSignatureMask);
+    if (!image.Reaches(clone + 8, allocate) || !image.Reaches(drop + 10, deallocate)) {
+        throw std::runtime_error("The game asset reader no longer uses the verified byte-vector allocator");
+    }
+    return reinterpret_cast<AllocateFunction>(allocate);
 }
 
 void AbsoluteJump(std::uint8_t* buffer, const void* address) {
@@ -196,35 +313,60 @@ void AbsoluteJump(std::uint8_t* buffer, const void* address) {
     std::memcpy(buffer + prefix.size(), &address, sizeof(address));
 }
 
-void Install(Runtime& state) {
-    auto* entry = FindReadEntry();
-    constexpr auto copied = kReadFilePrologue.size();
-    constexpr auto thunkSize = copied + 14;
+template<std::size_t N>
+void* PrepareDetour(const NativeImage& image, std::uint8_t* entry,
+                    const std::array<std::uint8_t, N>& prologue) {
+    static_assert(N >= 14);
+    image.Function(entry, N);
+    if (std::memcmp(entry, prologue.data(), N) != 0) {
+        throw std::runtime_error("Native detour prologue is incompatible");
+    }
+    constexpr auto thunkSize = N + 14;
     auto* thunk = static_cast<std::uint8_t*>(VirtualAlloc(nullptr, thunkSize,
         MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
-    if (!thunk) throw std::runtime_error("Cannot allocate reader trampoline");
-    std::memcpy(thunk, entry, copied);
-    AbsoluteJump(thunk + copied, entry + copied);
+    if (!thunk) throw std::runtime_error("Cannot allocate native reader trampoline");
+    std::memcpy(thunk, entry, N);
+    AbsoluteJump(thunk + N, entry + N);
     DWORD old;
     if (!VirtualProtect(thunk, thunkSize, PAGE_EXECUTE_READ, &old) ||
         !FlushInstructionCache(GetCurrentProcess(), thunk, thunkSize)) {
         VirtualFree(thunk, 0, MEM_RELEASE);
-        throw std::runtime_error("Cannot finalize reader trampoline");
+        throw std::runtime_error("Cannot finalize native reader trampoline");
     }
-    state.original = reinterpret_cast<ReadFunction>(thunk);
-    std::array<std::uint8_t, copied> replacement;
+    return thunk;
+}
+
+template<std::size_t N>
+void WriteDetour(std::uint8_t* entry, const void* hook,
+                 const std::array<std::uint8_t, N>&) {
+    std::array<std::uint8_t, N> replacement;
     replacement.fill(0x90);
-    AbsoluteJump(replacement.data(), reinterpret_cast<const void*>(&ReadHook));
-    if (!VirtualProtect(entry, copied, PAGE_EXECUTE_READWRITE, &old)) {
-        VirtualFree(thunk, 0, MEM_RELEASE);
-        throw std::runtime_error("Cannot write asset reader detour");
+    AbsoluteJump(replacement.data(), hook);
+    DWORD old;
+    if (!VirtualProtect(entry, N, PAGE_EXECUTE_READWRITE, &old)) {
+        throw std::runtime_error("Cannot write native reader detour");
     }
-    std::memcpy(entry, replacement.data(), replacement.size());
+    std::memcpy(entry, replacement.data(), N);
     DWORD ignored;
-    const auto restored = VirtualProtect(entry, copied, old, &ignored);
-    const auto flushed = FlushInstructionCache(GetCurrentProcess(), entry, copied);
-    if (!restored || !flushed) throw std::runtime_error("Cannot finalize asset reader detour");
-    Log(state, "Installed unique asset reader signature. No game hash/version allowlist is used.");
+    const auto restored = VirtualProtect(entry, N, old, &ignored);
+    const auto flushed = FlushInstructionCache(GetCurrentProcess(), entry, N);
+    if (!restored || !flushed) throw std::runtime_error("Cannot finalize native reader detour");
+}
+
+void Install(Runtime& state) {
+    const NativeImage image;
+    auto* read = image.Find(kReadFileSignature, kReadFileSignatureMask,
+        "Cannot uniquely locate a compatible asset reader after this game update");
+    auto* contains = image.Find(kContainsSignature, kContainsSignatureMask,
+        "Cannot uniquely locate a compatible asset availability check after this game update");
+    state.allocate = FindAllocator(image, read);
+    // Prepare both forwarding trampolines and ownership checks before changing
+    // either entry. Bootstrap completes before any game-owned code executes.
+    state.original = reinterpret_cast<ReadFunction>(PrepareDetour(image, read, kReadFilePrologue));
+    state.originalContains = reinterpret_cast<ContainsFunction>(PrepareDetour(image, contains, kContainsPrologue));
+    WriteDetour(read, reinterpret_cast<const void*>(&ReadHook), kReadFilePrologue);
+    WriteDetour(contains, reinterpret_cast<const void*>(&ContainsHook), kContainsPrologue);
+    Log(state, "Installed unique asset read/availability signatures and verified native byte-vector ownership. No game hash/version allowlist is used.");
 }
 }
 }
@@ -255,6 +397,8 @@ extern "C" DWORD WINAPI SpiderlessInitialize(void*) noexcept {
                                reinterpret_cast<LPCWSTR>(&g_initialize), &pinned)) {
             throw std::runtime_error("Cannot retain the mod for process lifetime");
         }
+        InitializeEmbeddedAssets();
+        Log(*state, "Validated embedded crab mesh, skins and texture dependencies; no MPQ extraction is required.");
         Install(*state);
         g_initialize.store(2);
         return ERROR_SUCCESS;
