@@ -1,7 +1,7 @@
-name: Build Windows DLL
+name: Build and release Windows DLL
 
-# The initial implementation is reviewed in a PR before its first build.
-# Only a push to main creates binaries; PR and manual runs are deliberately absent.
+# Source changes are reviewed in PRs. Only a push to main creates binaries and
+# publishes a release; PR and manual build triggers are deliberately absent.
 on:
   push:
     branches: [main]
@@ -26,7 +26,7 @@ jobs:
       - name: Configure x64
         run: cmake -S . -B build -A x64
 
-      - name: Test asset preparation
+      - name: Test bundled assets and archive parser
         run: python -B -m unittest discover -s tools -p "test_*.py" -v
 
       - name: Build release binaries
@@ -44,6 +44,14 @@ jobs:
           $package = Join-Path $env:GITHUB_WORKSPACE 'package'
           $dist = Join-Path $env:GITHUB_WORKSPACE 'dist'
           New-Item -ItemType Directory -Path $dist -Force | Out-Null
+
+          $proxyPath = Join-Path $package 'avrt.dll'
+          if (-not (Test-Path -LiteralPath $proxyPath -PathType Leaf)) {
+            throw 'The install package is missing the drop-in avrt.dll.'
+          }
+          if (Test-Path -LiteralPath (Join-Path $package 'SpiderlessLauncher.exe')) {
+            throw 'The package must not contain the removed launcher.'
+          }
 
           @(
             "Commit: $env:BUILD_SHA"
@@ -64,8 +72,17 @@ jobs:
           $archiveName = "SpiderlessAzerothSurvivors-windows-x64-$env:BUILD_SHA.zip"
           $archivePath = Join-Path $dist $archiveName
           Compress-Archive -Path (Join-Path $package '*') -DestinationPath $archivePath
-          $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$archiveHash  $archiveName" |
+
+          Copy-Item -LiteralPath $proxyPath -Destination (Join-Path $dist 'avrt.dll')
+
+          $releaseChecksums = Get-ChildItem -LiteralPath $dist -File |
+            Where-Object Name -NE 'SHA256SUMS.txt' |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash  $($_.Name)"
+            }
+          $releaseChecksums |
             Set-Content -LiteralPath (Join-Path $dist 'SHA256SUMS.txt') -Encoding ascii
 
       - name: Upload Windows package
@@ -76,3 +93,89 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: windows-2025
+    timeout-minutes: 5
+    concurrency:
+      group: publish-main-release
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Download and publish this commit's binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILD_SHA: ${{ github.sha }}
+          BUILD_RUN_ID: ${{ github.run_id }}
+          BUILD_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $tag = "main-$env:BUILD_SHA"
+
+          # Rerunning a successful commit must not replace its published binaries.
+          $existingDraft = gh release view $tag --repo $env:GH_REPO --json isDraft --jq '.isDraft' 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if ($existingDraft.Trim() -eq 'true') {
+              throw "Release $tag is an unfinished draft. Review/delete the draft and rerun; it has not been published."
+            }
+            Write-Output "Release $tag already exists; keeping its existing assets."
+            exit 0
+          }
+
+          gh run download $env:BUILD_RUN_ID --repo $env:GH_REPO `
+            --name "SpiderlessAzerothSurvivors-windows-x64-$env:BUILD_SHA" --dir dist
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not download the successful build package.'
+          }
+
+          $assets = @(Get-ChildItem -LiteralPath dist -File | Sort-Object Name)
+          $expectedNames = @(
+            'avrt.dll'
+            "SpiderlessAzerothSurvivors-windows-x64-$env:BUILD_SHA.zip"
+            'SHA256SUMS.txt'
+          )
+          if ($assets.Count -ne $expectedNames.Count -or
+              @($expectedNames | Where-Object { $_ -notin $assets.Name }).Count -ne 0) {
+            throw 'Release requires exactly avrt.dll, the ZIP package, and SHA256SUMS.txt.'
+          }
+          $notes = @(
+            'Windows x64 build of Spiderless Azeroth Survivors.'
+            ''
+            'Download avrt.dll below and place it beside AzerothSurvivors.exe without renaming it.'
+            'Start AzerothSurvivors.exe normally; no separate launcher is needed.'
+            ''
+            'The crab model and all required textures are embedded in the DLL.'
+            'No separate MPQ, other WoW installation, launcher or asset download is needed.'
+            "Read the [installation instructions]($env:SOURCE_URL/README.md)."
+            'The ZIP includes the DLL, documentation, and embedded asset provenance.'
+            'Download SHA256SUMS.txt to verify avrt.dll or the ZIP with SHA-256.'
+            ''
+            "Commit: $env:BUILD_SHA"
+            "Build: $env:BUILD_RUN_URL"
+          )
+          $notesPath = Join-Path $env:RUNNER_TEMP 'spiderless-release-notes.md'
+          $notes | Set-Content -LiteralPath $notesPath -Encoding utf8
+          $assetPaths = @($assets | ForEach-Object FullName)
+          $shortSha = $env:BUILD_SHA.Substring(0, 12)
+
+          # An older build or rerun must never displace a newer main release.
+          $mainSha = gh api "repos/$env:GH_REPO/git/ref/heads/main" --jq '.object.sha'
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($mainSha)) {
+            throw 'Could not determine the current main commit before publishing.'
+          }
+          $latest = ($mainSha.Trim() -eq $env:BUILD_SHA).ToString().ToLowerInvariant()
+          gh release create $tag @assetPaths --repo $env:GH_REPO --target $env:BUILD_SHA `
+            --title "Windows x64 - $shortSha" --notes-file $notesPath --latest=$latest
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not publish the GitHub Release.'
+          }

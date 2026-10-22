@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "source_client": {
+    "name": "World of Warcraft Vanilla",
+    "version": "1.12.1",
+    "build": 5875,
+    "mirror_release": "Stonetavern Classic 1.8",
+    "landing_page": "https://stonetavern.app/clients/",
+    "mirror_manifest_url": "https://downloads.stonetavern.app/manifest.json",
+    "file_manifest_url": "https://downloads.stonetavern.app/clients/classic-1.12.1/all/1.8/files.json",
+    "file_manifest_sha256": "fa3542d28d6ef56373033df55e04117927c3424aaf54984ed9c39107de9ba54b"
+  },
+  "source_archives": [
+    {
+      "path": "Data/model.MPQ",
+      "size": 191194646,
+      "sha256": "21cb93a3f6e591df8855fcbb0c559c70a0518a20408f7ee4cf59304731e5f8b9",
+      "url": "https://downloads.stonetavern.app/clients/classic-1.12.1/all/1.8/tree/Data/model.MPQ",
+      "hash_verification": "Publisher-declared archive SHA-256; archive was range-read, not downloaded in full."
+    },
+    {
+      "path": "Data/texture.MPQ",
+      "size": 664760752,
+      "sha256": "78ae55d609fea3ac07eb1ce45024542c295032c37164234f820762d4dfa44128",
+      "url": "https://downloads.stonetavern.app/clients/classic-1.12.1/all/1.8/tree/Data/texture.MPQ",
+      "hash_verification": "Publisher-declared archive SHA-256; archive was range-read, not downloaded in full."
+    }
+  ],
+  "model_changes": [],
+  "files": [
+    {
+      "name": "Crab.m2",
+      "mpq_path": "Creature\\Crab\\Crab.m2",
+      "bytes": 239760,
+      "sha256": "9ac0bf24cb9b62b3c4120dbc8c31a8ab2c2c72227b6db7e07d8807fffb29cb89",
+      "source_archive_url": "https://downloads.stonetavern.app/clients/classic-1.12.1/all/1.8/tree/Data/model.MPQ",
+      "format": "MD20",
+      "version": 256
+    },
+    {
+      "name": "CrabSkinBronze.blp",
+      "mpq_path": "Creature\\Crab\\CrabSkinBronze.blp",
+      "bytes": 88580,
+      "sha256": "d50b8f8cb71682e1021eef30a3c8920d4927f4632bf784fe3fc52c706e9fcc14",
+      "source_archive_url": "https://downloads.stonetavern.app/clients/classic-1.12.1/all/1.8/tree/Data/texture.MPQ",
+      "format": "BLP2",
+      "width": 256,
+      "height": 256,
+      "encoding": 2,
+      "alpha_depth": 8,
+      "mip_levels": 9
+    },
+    {
+      "name": "CrabSkinIvory.blp",
+      "mpq_path": "Creature\\Crab\\CrabSkinIvory.blp",
+      "bytes": 88580,
+      "sha256": "e3ba607ca35d4319ab627c83afa4377a812431e385a68c1ea938f8201babd6dd",
+      "source_archive_url": "https://downloads.stonetavern.app/clients/classic-1.12.1/all/1.8/tree/Data/texture.MPQ",
+      "format": "BLP2",
+      "width": 256,
+      "height": 256,
+      "encoding": 2,
+      "alpha_depth": 8,
+      "mip_levels": 9
+    },
+    {
+      "name": "CrabSkinSaphire.blp",
+      "mpq_path": "Creature\\Crab\\CrabSkinSaphire.blp",
+      "bytes": 88580,
+      "sha256": "bd7f98f0a7746da66bd48020537593fbbe342fec206782532ce0d62800c3faad",
+      "source_archive_url": "https://downloads.stonetavern.app/clients/classic-1.12.1/all/1.8/tree/Data/texture.MPQ",
+      "format": "BLP2",
+      "width": 256,
+      "height": 256,
+      "encoding": 2,
+      "alpha_depth": 8,
+      "mip_levels": 9
+    },
+    {
+      "name": "CrabSkinVermillian.blp",
+      "mpq_path": "Creature\\Crab\\CrabSkinVermillian.blp",
+      "bytes": 88580,
+      "sha256": "b24994c6d1b0d50cc9dffe069858c1cb1db1c292c39bbafbb28272de65ae3064",
+      "source_archive_url": "https://downloads.stonetavern.app/clients/classic-1.12.1/all/1.8/tree/Data/texture.MPQ",
+      "format": "BLP2",
+      "width": 256,
+      "height": 256,
+      "encoding": 2,
+      "alpha_depth": 8,
+      "mip_levels": 9
+    },
+    {
+      "name": "CrabReflect.blp",
+      "mpq_path": "Creature\\Crab\\CrabReflect.blp",
+      "bytes": 2564,
+      "sha256": "f9fbc312b41a6964f30935924002fe60b217bdf040191b43e786307827ca881d",
+      "source_archive_url": "https://downloads.stonetavern.app/clients/classic-1.12.1/all/1.8/tree/Data/texture.MPQ",
+      "format": "BLP2",
+      "width": 32,
+      "height": 32,
+      "encoding": 2,
+      "alpha_depth": 8,
+      "mip_levels": 6
+    }
+  ]
+}

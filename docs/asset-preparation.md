@@ -1,50 +1,40 @@
-# Preparing local crab assets
+# Embedded crab assets
 
-The researched Azeroth Survivors 0.110.0 `Data` folder contains the Vanilla
-crab DBC definitions, but omits the crab mesh and its four skins. The DLL needs
-the asset overlay as well as the display remap. No original game assets are
-included in this repository or its source builds.
+Users install only `avrt.dll` beside `AzerothSurvivors.exe`. The DLL contains
+the Vanilla crab model, four skins and reflection texture as RCDATA resources.
+There is no asset preparation step, external asset folder, extra MPQ or runtime
+download. It does not write embedded assets to disk.
 
-Use a full, locally owned **Vanilla WoW 1.12** `Data` folder as the source:
+The installed game MPQs contain the crab DBC definitions but omit the mesh and
+four skins. Independent direct MPQ hash lookups, listfile checks and a bounded
+scan of the EXE's embedded model candidates confirmed the expected files were
+unavailable from the inspected 0.110.0 install. Reading the adjacent EXE/Data
+alone cannot supply these missing files. The bundled inputs fill that gap.
 
-```powershell
-py -3 tools/prepare_crab_assets.py --data-dir "C:\Games\World of Warcraft\Data" --output patch-Z.MPQ
-```
+`assets/crab/manifest.json` records the exact source files and hashes;
+`assets/crab/NOTICE.md` records provenance and attribution. These files are
+included in source so Windows builds need no other client or network download.
+CMake configures `resources/crab_assets.rc.in` with their build-time paths and
+the Windows resource compiler puts the bytes directly into the DLL.
 
-Alternatively, pass the required source archives explicitly. Repeated `--mpq`
-arguments are ordered from lowest to highest precedence:
+`InitializeEmbeddedAssets` locates resources through an address in this DLL,
+checks model/texture headers, validates the model's texture references against
+the bundle and requires a Monster1 skin slot. Only then does it publish the
+immutable lookup table. Archive paths compare without ASCII case and treat
+forward/backslashes alike. Every unrelated asset remains with the game's
+ordinary adjacent Data chain.
 
-```powershell
-py -3 tools/prepare_crab_assets.py --mpq "C:\Games\WoW\Data\model.MPQ" --mpq "C:\Games\WoW\Data\texture.MPQ" --output patch-Z.MPQ
-```
+Both native existence checks and successful read results must recognize the
+same embedded paths. The read hook returns a separate copy allocated through
+the game's discovered byte allocator, so native callers can own and free it
+normally. Resource memory remains read-only in the pinned DLL. It is never
+returned as a Rust-owned Vec and is never freed by the game. The exact native
+contracts and compatibility checks are described in `native-hook.md`.
 
-The tool resolves `Creature\Crab\Crab.m2`, the Bronze, Ivory, Saphire and
-Vermillian skins, and each embedded file texture referenced by the model. The
-spelling `Saphire` is the original asset name. It accepts Vanilla `MD20` versions
-256/257; modern Retail crab models use an incompatible format.
+The old `tools/prepare_crab_assets.py` is retained as an optional developer MPQ
+inspection/extraction utility and as the parser used by the binary-input tests.
+It is not installed in release packages and is not part of the user workflow.
+The mod does not create or mount its output.
 
-The output is a normal stored MPQ overlay with encrypted directory tables and
-a listfile. Every extracted asset is read back and compared with its source
-bytes. The tool reports the archive SHA-256 and refuses to replace a different
-existing output. It does not install the archive or change the game. When ready
-to install, copy the resulting `patch-Z.MPQ` into Azeroth Survivors' `Data`
-folder, and follow the DLL installation instructions in the README. Check that
-the game does not already use that archive name before copying.
-
-Python 3 and its standard library are sufficient. Source archives must be
-ordinary MPQ v0/v1 files with raw or zlib-compressed members. Encrypted members,
-PKWARE and other compression codecs, delta patches and extended 64-bit offsets
-are rejected explicitly. No files are written if a required crab asset is
-missing.
-
-The six parser/extractor tests use synthetic meshes and textures, including
-compressed sectors and complete overlay extraction:
-
-```powershell
-py -3 -B -m unittest discover -s tools -p test_prepare_crab_assets.py -v
-```
-
-The installed `CreatureModelData.dbc`, `CreatureDisplayInfo.dbc` and a real
-`MineSpider.m2` were also read successfully with this parser. Preparing real
-crab assets remains unverified because a complete local Vanilla asset source
-was unavailable during development.
+Resource validation and source tests do not prove rendered behavior. The
+single-file revision still needs its first Windows build and in-game checks.
