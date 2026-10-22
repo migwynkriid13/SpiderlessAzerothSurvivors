@@ -121,17 +121,17 @@ void TestCatalogAndRoles() {
     using spiderless::ReplacementScale;
     Near(ReplacementScale(ids, 1091, 0.6f, CreatureRole::Regular), 1.2f,
          "Black Widow Hatchling needs regular 2x size");
-    Near(ReplacementScale(ids, 1091, 2.8f, CreatureRole::Boss), 19.6f,
-         "Naraxis sharing display 1091 needs boss 7x size");
+    Near(ReplacementScale(ids, 1091, 2.8f, CreatureRole::Boss), 11.2f,
+         "Naraxis sharing display 1091 needs boss 4x size");
     Near(ReplacementScale(ids, 366, 1.7f, CreatureRole::Regular), 3.4f,
          "Ordinary Carrion Recluse needs regular 2x size");
-    Near(ReplacementScale(ids, 366, 1.7f * 1.35f, CreatureRole::Guardian), 16.065f,
-         "Guardian Carrion Recluse needs 7x its existing guardian scale");
+    Near(ReplacementScale(ids, 366, 1.7f * 1.35f, CreatureRole::Guardian), 9.18f,
+         "Guardian Carrion Recluse needs 4x its existing guardian scale");
     Near(ReplacementScale(ids, 16586, 1.7f, CreatureRole::Regular), 3.4f,
          "Guardian of Icecrown is an ordinary elite despite its name");
     Near(ReplacementScale(ids, 777, 1.2f, CreatureRole::Boss), 1.2f,
          "Unreplaced creatures must retain their scale even when bosses");
-    Near(ReplacementScale(ids, 1091, 2.8f, CreatureRole::Boss), 19.6f,
+    Near(ReplacementScale(ids, 1091, 2.8f, CreatureRole::Boss), 11.2f,
          "Appearance restoration must multiply original scale once");
     Require(ReplacementScale(ids, 1091, 0, CreatureRole::Boss) == 0,
             "Zero scale must remain zero");

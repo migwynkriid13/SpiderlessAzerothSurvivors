@@ -258,7 +258,7 @@ every individual creature sharing one display ID.
 
 The model remap also returns the sorted source display IDs. Each later display
 read must produce the same set. The live size policy applies only to those IDs:
-7× for bosses and lair guardians, 2× for other creatures. It multiplies the
+4× for bosses and lair guardians, 2× for other creatures. It multiplies the
 game's supplied scale, preserving any existing boss/guardian size adjustment.
 It preserves invalid/non-positive scales and avoids introducing float overflow.
 

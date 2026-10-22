@@ -158,7 +158,7 @@ jobs:
             'Start AzerothSurvivors.exe normally; no separate launcher is needed.'
             ''
             'The crab model and all required textures are embedded in the DLL.'
-            'Replaced bosses and lair guardians are 7x their original size; other replaced creatures are 2x.'
+            'Replaced bosses and lair guardians are 4x their original size; other replaced creatures are 2x.'
             'No separate MPQ, other WoW installation, launcher or asset download is needed.'
             "Read the [installation instructions]($env:SOURCE_URL/README.md)."
             'The ZIP includes the DLL, documentation, and embedded asset provenance.'
