@@ -1,4 +1,4 @@
-# Native read hook: Azeroth Survivors 0.110.0
+# Native hooks: Azeroth Survivors 0.110.0
 
 The reference examined is Windows x64, preferred image base `0x140000000`,
 SHA-256 `e069bf3152f8d8f7160d66388907fc181c733bd170aa150d3b7ff7adf251e048`.
@@ -64,7 +64,7 @@ Exact bytes: `5541565657534883ec60488d6c2460`.
 
 A 14-byte RIP-indirect absolute jump (`FF 25 00 00 00 00` plus the 64-bit
 hook address) and one NOP replace those 15 bytes. The trampoline contains the
-original 15 bytes and an absolute jump to `image_base + 0x5aa131f`. None of the
+original 15 bytes and an absolute jump just after the displaced prologue. None of the
 copied instructions contains a relative branch or a RIP-relative data address,
 so no instruction relocation is required. Flush the instruction cache after
 writes and preserve/restore page protection.
@@ -72,9 +72,9 @@ writes and preserve/restore page protection.
 The availability entry also uses a 15-byte trampoline. Its complete displaced
 instructions are `push r14; push rsi; push rdi; push rbx; sub rsp,0x28;
 mov rsi,r8; mov rdi,rdx`, bytes `41565657534883ec284c89c64889d7`.
-They contain no relative branch or RIP-relative operand. Both original forwarding
+They contain no relative branch or RIP-relative operand. All original forwarding
 trampolines are prepared and all signatures/ownership contracts checked before
-either native entry is modified.
+any native entry is modified.
 
 Install before the game entrypoint executes. The app-local AVRT proxy runs its
 bootstrap after Windows DLL initialization and completes hook installation
@@ -154,7 +154,7 @@ EXE has an identical Rust ABI. Validate the live WDBC schema before mutation.
 
 Only `avrt.dll` is installed beside the EXE. The crab mesh, skins and texture
 dependencies are Win32 resources inside the DLL. Startup loads and validates
-the complete resource set before enabling either hook. The DLL remains pinned
+the complete resource set before enabling hooks. The DLL remains pinned
 for process lifetime, so resource spans remain valid. No overlay MPQ, loose
 asset extraction, network access or change to the adjacent `Data` is required.
 The game continues resolving all other files from its own archives.
@@ -254,6 +254,78 @@ random crab variant for that display throughout the process. This varies
 source display appearances; it does not claim a different random roll for
 every individual creature sharing one display ID.
 
+## Per-creature visual size
+
+The model remap also returns the sorted source display IDs. Each later display
+read must produce the same set. The live size policy applies only to those IDs:
+7× for bosses and lair guardians, 2× for other creatures. It multiplies the
+game's supplied scale, preserving any existing boss/guardian size adjustment.
+It preserves invalid/non-positive scales and avoids introducing float overflow.
+
+Role cannot be stored on a shared display record. In the current roster,
+Naraxis and Black Widow Hatchling both use display 1091. Carrion Recluse,
+display 366, can spawn as an ordinary elite or as a lair guardian. The ordinary
+elite named Guardian of Icecrown, display 16586, is outside the actual Naxx
+lair selection (explicit enemy indices 12–15). These are audit examples, not
+runtime identity lists.
+
+Two additional signature-discovered functions provide the live boundary:
+
+| Function | Reference native extent | Win64 arguments |
+| --- | --- | --- |
+| Creature presentation creation | `145937290..145938002` | RCX=game, RDX=GUID, R8D=entry, R9D=display; entry stack +0x28=scale float, +0x30=HP float, +0x38=rank bool, +0x40=position pointer |
+| Appearance publication | `14594c8a0..14594caa8` | RCX=game, RDX=GUID, R8D=display, XMM3=scale float |
+
+The creation hook identifies its caller from the return address of one of four
+uniquely matched call contexts. Each context must fit a declared native function
+and its decoded `CALL rel32` must reach the discovered creator:
+
+| Live role | Reference call instruction |
+| --- | --- |
+| Boss | `14593610b` |
+| Lair guardian | `145901614` |
+| Ordinary enemy (including ordinary elite) | `145938feb` |
+| Ward | `145910c25` |
+
+The rank Boolean is insufficient: ordinary elites can set it too. Installation
+also checks that all direct calls to the creator belong to these four contexts.
+An unrecognized runtime caller stops the process. Role discovery uses native
+instruction contracts; none of these reference addresses is used at runtime.
+
+The original creator receives every original argument unchanged. It creates the
+unit using the original scale, including its client bounding-radius field 129
+and combat-reach field 130. If the display is replaced, the hook then invokes
+the original appearance publisher with the enlarged scale. That publisher
+changes only visual scale field 4 and display field 131. Its field-131 insertion
+is visible at `14594c8e8`, the field-4 path at `14594c90b..14594c994`, and event
+publication at `14594ca49..14594ca88`. It does not alter health, damage, actor
+scale or native AI reach.
+
+Boss/guardian roles are retained by GUID for the active game, including creatures
+whose initial appearance is outside the replacement set. Every creation removes
+any stale role for its GUID; a different game pointer clears the map. At most
+65,536 special-role entries are retained. An exceeded budget or creation before
+the replacement catalog is ready stops the process. No lock remains held while
+calling native game functions.
+
+The appearance hook handles later changes and restorations with that same role.
+It always multiplies the incoming original scale once. The first post-creation
+update calls the original trampoline directly, avoiding a second multiplier.
+No already-enlarged field or game definition is read back as the scale input.
+
+The creator's displaced prologue is 17 bytes, complete instructions with lengths
+`1,2,2,2,1,1,1,7`; the appearance publisher's is 19 bytes with lengths
+`1,1,1,1,7,8`. Neither includes RIP-relative addressing or relative control flow.
+Both entry signatures, their scale-handling anchors, native function boundaries,
+all four call contexts and every trampoline are checked before any hook is
+written. The standalone static verifier can inspect an optional local EXE:
+
+```text
+python -B tools/verify_scale_hooks.py /path/to/AzerothSurvivors.exe
+```
+
+The verifier needs no game launch, compiler, committed EXE or fixed hash gate.
+
 ## Evidence limits
 
 Static evidence came from the complete current declared-unwind instruction
@@ -272,10 +344,15 @@ the existing reader signature remains unique. Static call-edge checks confirmed
 the cached-byte clone/drop targets and the three native heap import names.
 These inspections did not compile or execute the DLL.
 
-The earlier launcher-based implementation compiled successfully in the
-[main build](https://github.com/migwynkriid13/SpiderlessAzerothSurvivors/actions/runs/39852896854).
-The AVRT proxy, automatic bootstrap and embedded-resource hooks have not been
-compiled or executed in this source update. No game launch, rendered crab
-validation or Windows runtime test has been performed. Startup validates the
-bundled assets and observed native contracts, but static evidence does not
-establish live visual parity.
+The AVRT proxy, automatic bootstrap and embedded-resource implementation built
+successfully in the
+[main build](https://github.com/migwynkriid13/SpiderlessAzerothSurvivors/actions/runs/39857223735).
+The player subsequently confirmed rendered crab models using WoWSilicon on
+macOS. This confirms the existing replacement path, not exhaustive coverage of
+every creature, animation or zone.
+
+The new creature-role scaling hooks are source changes that have not been
+compiled or executed. Their current evidence is static inspection of the
+installed EXE plus source regression fixtures. Their first build remains the
+main-only pipeline after PR review and merge. Live size and restoration behavior
+need in-game validation with that resulting DLL.

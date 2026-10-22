@@ -10,8 +10,9 @@ a launcher or a DLL list. The mod does not download assets or extract them onto
 disk at runtime. Existing game files in the adjacent `Data` directory are used
 for the rest of the game as usual.
 
-**Status: this single-file revision is awaiting its first Windows build and
-in-game validation. There is no verified playable release yet.**
+The single-file release has built successfully, and crab rendering has been
+confirmed by a player using WoWSilicon on macOS. The new size changes below are
+source changes awaiting their next Windows build and in-game validation.
 
 ## Install
 
@@ -52,17 +53,37 @@ Vermillian. Each source appearance receives a random color at startup, stable
 throughout the session. Creatures sharing an original appearance share a color;
 there is no separate random roll per spawned creature.
 
-The model, extra appearance and all skin slots change together. IDs, size
-multipliers, alpha, sounds and other metadata stay intact. Model geometry may
-affect derived collision/attachment behavior; this requires runtime validation.
+The model, extra appearance and all skin slots change together. Original DBC
+IDs, scale, alpha, sounds and other metadata stay intact.
+
+Replaced creatures receive these visual size multipliers relative to their
+existing size, including any size adjustment already applied by the game:
+
+| Creature role | Size |
+| --- | --- |
+| Boss | 7× |
+| Lair guardian | 7× |
+| Ordinary mob, including ordinary elites | 2× |
+
+The role comes from the live creature creation path. A boss and ordinary mob
+can share an appearance without sharing a size multiplier. Creature names do
+not determine the role: the ordinary elite named Guardian of Icecrown uses 2×.
+Native appearance changes and restoration reuse the same actor role and apply
+the multiplier once to the game's supplied scale. Other creature appearances
+retain their original size.
+
+Scaling uses the game's visual appearance publisher, leaving health, damage,
+AI attack reach and the client bounding-radius/combat-reach fields at their
+original values. The enlarged mesh and attachments still need visual testing.
 Names, icons, web effects, world scenery and direct model loads bypassing the
 creature DBC are outside this appearance change.
 
 ## Game updates
 
 There is **no EXE hash or version lock**. Hook discovery uses unique masked
-instruction signatures and checks function boundaries, prologues, native byte
-allocation and DBC structure. Model IDs are derived from the current catalog.
+instruction signatures and checks function boundaries, prologues, creature
+creation call sites, native byte allocation and DBC structure. Model IDs are
+derived from the current catalog.
 An absent, ambiguous or incompatible native boundary stops startup.
 
 Updates preserving these native contracts may remain compatible; arbitrary
@@ -88,6 +109,7 @@ Desktop development with C++ and the Windows SDK, plus CMake 3.25 or newer:
 ```powershell
 cmake -S . -B build -A x64
 cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
 cmake --install build --config Release --prefix package
 ```
 
@@ -97,6 +119,12 @@ The standard-library Python checks run without compiling or launching a game:
 py -3 -B -m unittest discover -s tools -p "test_*.py" -v
 ```
 
-Before calling a binary playable, validate automatic loading, AVRT forwarding,
-embedded mesh/skin reads, animation, giant/boss scaling and affected zones on
-Windows. This revision has not been compiled, loaded or visually tested yet.
+The C++ regression target checks catalog-derived replacement IDs, preserved DBC
+metadata, shared appearances with different live roles, 2×/7× multipliers and
+appearance restoration. It runs in the main build before packaging; the test
+executable is not installed or included in releases.
+
+The existing release's model rendering is player-confirmed on WoWSilicon.
+The new scaling hooks have not been compiled or tested in-game yet. Validate
+bosses, guardians, ordinary mobs, appearance restoration, animation and affected
+zones after the next main build.

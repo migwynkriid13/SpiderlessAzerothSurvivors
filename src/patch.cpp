@@ -1,7 +1,9 @@
 #include <windows.h>
 #include <bcrypt.h>
+#include <intrin.h>
 
 #include "policy.hpp"
+#include "scale_policy.hpp"
 #include "embedded_assets.hpp"
 #include "target_profile.hpp"
 
@@ -9,6 +11,7 @@
 #include <array>
 #include <atomic>
 #include <cstring>
+#include <cmath>
 #include <limits>
 #include <mutex>
 #include <new>
@@ -16,11 +19,16 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <vector>
 
 namespace spiderless {
 namespace {
 using ReadFunction = NativeReadResult* (__fastcall *)(NativeReadResult*, void*, const char*, std::size_t);
 using ContainsFunction = bool (__fastcall *)(void*, const char*, std::size_t);
+using CreateFunction = void (__fastcall *)(void*, std::uint64_t, std::uint32_t,
+    std::uint32_t, float, float, bool, const void*);
+using AppearanceFunction = void (__fastcall *)(void*, std::uint64_t, std::uint32_t, float);
 using AllocateFunction = void* (__fastcall *)(std::size_t, std::size_t);
 constexpr auto kMaxRead = 32ULL * 1024 * 1024;
 constexpr auto kProbeBudget = 8ULL * 1024 * 1024;
@@ -30,6 +38,17 @@ struct Runtime {
     ReadFunction original{};
     ContainsFunction originalContains{};
     AllocateFunction allocate{};
+    CreateFunction originalCreate{};
+    AppearanceFunction originalAppearance{};
+    const void* bossReturn{};
+    const void* guardianReturn{};
+    const void* ordinaryReturn{};
+    const void* wardReturn{};
+    std::mutex scaleLock;
+    std::vector<std::uint32_t> replacedDisplays;
+    bool displayCatalogReady{};
+    void* activeGame{};
+    std::unordered_map<std::uint64_t, CreatureRole> specialRoles;
     std::uint64_t seed{};
     HANDLE log{INVALID_HANDLE_VALUE};
     SRWLOCK logLock = SRWLOCK_INIT;
@@ -121,16 +140,105 @@ NativeReadResult* __fastcall ReadHook(NativeReadResult* out, void* chain,
         if (returned != out || !Valid(*out)) throw std::runtime_error("CreatureDisplayInfo read failed");
         std::call_once(state.probes, [&] { Probe(state, chain); });
         const auto& models = state.models;
-        const auto count = RemapDisplayInfo(
+        const auto replaced = RemapDisplayInfo(
             {models.data, static_cast<std::size_t>(models.size)},
             {out->data, static_cast<std::size_t>(out->size)}, state.seed);
-        Log(state, "Replaced " + std::to_string(count) + " arachnid appearance rows with Vanilla crabs.");
+        {
+            std::lock_guard lock(state.scaleLock);
+            if (state.displayCatalogReady && state.replacedDisplays != replaced) {
+                throw std::runtime_error("Creature replacement display catalog changed during this run");
+            }
+            if (!state.displayCatalogReady) {
+                state.replacedDisplays = replaced;
+                state.displayCatalogReady = true;
+            }
+        }
+        Log(state, "Replaced " + std::to_string(replaced.size()) + " arachnid appearance rows with Vanilla crabs.");
     } catch (const std::exception& error) {
         Stop(state, error.what());
     } catch (...) {
         Stop(state, "Unexpected creature appearance replacement failure");
     }
     return returned;
+}
+
+// The game owns one active run. Remember special roles independently of
+// display IDs: the same spider appearance can be used by an ordinary elite
+// and a lair guardian. Every creation replaces prior ownership for its GUID.
+void RememberRole(Runtime& state, void* game, std::uint64_t guid, CreatureRole role) {
+    constexpr std::size_t kMaxSpecialRoles = 65536;
+    std::lock_guard lock(state.scaleLock);
+    if (!state.displayCatalogReady) {
+        throw std::runtime_error("Creature creation preceded replacement display catalog initialization");
+    }
+    if (state.activeGame != game) {
+        state.specialRoles.clear();
+        state.activeGame = game;
+    }
+    // Also remove stale special ownership when a new run reuses a GUID for an
+    // ordinary enemy or ward. Never keep a native call inside this lock.
+    state.specialRoles.erase(guid);
+    if (role != CreatureRole::Regular) {
+        if (state.specialRoles.size() >= kMaxSpecialRoles) {
+            throw std::runtime_error("Creature role tracking exceeded its safety budget");
+        }
+        state.specialRoles.emplace(guid, role);
+    }
+}
+
+float ScaledAppearance(Runtime& state, void* game, std::uint64_t guid,
+                       std::uint32_t display, float scale) {
+    std::lock_guard lock(state.scaleLock);
+    auto role = CreatureRole::Regular;
+    if (game == state.activeGame) {
+        const auto found = state.specialRoles.find(guid);
+        if (found != state.specialRoles.end()) role = found->second;
+    }
+    return ReplacementScale(state.replacedDisplays, display, scale, role);
+}
+
+void __fastcall AppearanceHook(void* game, std::uint64_t guid,
+                               std::uint32_t display, float scale) noexcept {
+    auto& state = *g_runtime;
+    try {
+        // Native restoration supplies its unmodified actor scale each time.
+        // Multiply that input once; never read back an already enlarged model.
+        const auto scaled = ScaledAppearance(state, game, guid, display, scale);
+        state.originalAppearance(game, guid, display, scaled);
+    } catch (const std::exception& error) {
+        Stop(state, error.what());
+    } catch (...) {
+        Stop(state, "Unexpected creature appearance scaling failure");
+    }
+}
+
+__declspec(noinline) void __fastcall CreateHook(void* game, std::uint64_t guid,
+    std::uint32_t entry, std::uint32_t display, float scale, float hp,
+    bool rank, const void* position) noexcept {
+    auto& state = *g_runtime;
+    const auto* caller = _ReturnAddress();
+    try {
+        auto role = CreatureRole::Regular;
+        if (caller == state.bossReturn) role = CreatureRole::Boss;
+        else if (caller == state.guardianReturn) role = CreatureRole::Guardian;
+        else if (caller != state.ordinaryReturn && caller != state.wardReturn) {
+            throw std::runtime_error("An unverified native creature creator reached the scale hook");
+        }
+        RememberRole(state, game, guid, role);
+        // Preserve every original creation argument. In particular, the game
+        // derives its bounding radius and combat reach from this raw scale.
+        state.originalCreate(game, guid, entry, display, scale, hp, rank, position);
+        const auto scaled = ScaledAppearance(state, game, guid, display, scale);
+        if (std::isfinite(scale) && scale > 0.0f && scaled != scale) {
+            // This native updater emits only display and visual scale fields.
+            // Bypass AppearanceHook so this first adjustment is applied once.
+            state.originalAppearance(game, guid, display, scaled);
+        }
+    } catch (const std::exception& error) {
+        Stop(state, error.what());
+    } catch (...) {
+        Stop(state, "Unexpected creature creation scaling failure");
+    }
 }
 
 bool Matches(std::span<const std::uint8_t> bytes,
@@ -204,7 +312,7 @@ public:
         return {address, entry->EndAddress - entry->BeginAddress};
     }
 
-    std::uint8_t* Find(std::span<const std::uint8_t> signature,
+    std::uint8_t* FindCode(std::span<const std::uint8_t> signature,
                        std::span<const std::uint8_t> mask, const char* error) const {
         std::uint8_t* match = nullptr;
         const auto* sections = IMAGE_FIRST_SECTION(nt_);
@@ -221,8 +329,61 @@ public:
             }
         }
         if (!match) throw std::runtime_error(error);
+        return match;
+    }
+
+    std::uint8_t* Find(std::span<const std::uint8_t> signature,
+                       std::span<const std::uint8_t> mask, const char* error) const {
+        auto* match = FindCode(signature, mask, error);
         Function(match, signature.size());
         return match;
+    }
+
+    void ValidateCallSite(std::uint8_t* start, std::size_t size,
+                          std::size_t callOffset, std::uint8_t* expected) const {
+        if (callOffset + 5 > size || !Executable(start, size) ||
+            Relative(start + callOffset, 0xe8) != expected) {
+            throw std::runtime_error("Creature role signature no longer calls the verified unit creator");
+        }
+        DWORD64 unwindBase = 0;
+        const auto* entry = RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(start), &unwindBase, nullptr);
+        if (!entry || unwindBase != reinterpret_cast<DWORD64>(base_)) {
+            throw std::runtime_error("Creature role call has no compatible native function boundary");
+        }
+        auto* begin = base_ + entry->BeginAddress;
+        const auto function = Function(begin, 1);
+        if (start < begin || static_cast<std::size_t>(start - begin) > function.size() ||
+            size > function.size() - static_cast<std::size_t>(start - begin)) {
+            throw std::runtime_error("Creature role signature crosses a native function boundary");
+        }
+    }
+
+    void ValidateCreatorCallers(std::uint8_t* create,
+                               const std::array<const void*, 4>& returns) const {
+        std::array<bool, 4> seen{};
+        const auto* sections = IMAGE_FIRST_SECTION(nt_);
+        for (unsigned i = 0; i < nt_->FileHeader.NumberOfSections; ++i) {
+            const auto& section = sections[i];
+            if (!(section.Characteristics & IMAGE_SCN_MEM_EXECUTE) || section.Misc.VirtualSize < 5) continue;
+            auto* start = base_ + section.VirtualAddress;
+            for (std::size_t at = 0; at <= section.Misc.VirtualSize - 5; ++at) {
+                if (start[at] != 0xe8) continue;
+                std::int32_t displacement;
+                std::memcpy(&displacement, start + at + 1, sizeof(displacement));
+                const auto next = reinterpret_cast<std::uintptr_t>(start + at + 5);
+                if (next + displacement != reinterpret_cast<std::uintptr_t>(create)) continue;
+                const auto found = std::find(returns.begin(), returns.end(), start + at + 5);
+                if (found == returns.end()) {
+                    // Conservatively reject even an ambiguous E8 byte sequence:
+                    // a new actor producer must be understood before scaling it.
+                    throw std::runtime_error("The native unit creator has an unverified caller after this game update");
+                }
+                seen[static_cast<std::size_t>(found - returns.begin())] = true;
+            }
+        }
+        if (std::find(seen.begin(), seen.end(), false) != seen.end()) {
+            throw std::runtime_error("A verified native creature role call is missing");
+        }
     }
 
     std::uint8_t* Relative(std::uint8_t* instruction, std::uint8_t opcode) const {
@@ -272,11 +433,11 @@ std::uint8_t* FindInside(std::span<const std::uint8_t> function,
     if (function.size() >= signature.size()) {
         for (std::size_t i = 0; i <= function.size() - signature.size(); ++i) {
             if (!Matches(function.subspan(i), signature, mask)) continue;
-            if (match) throw std::runtime_error("Native byte-vector ownership signature is ambiguous");
+            if (match) throw std::runtime_error("Native structural signature is ambiguous");
             match = function.data() + i;
         }
     }
-    if (!match) throw std::runtime_error("Native byte-vector ownership signature is missing");
+    if (!match) throw std::runtime_error("Native structural signature is missing");
     return const_cast<std::uint8_t*>(match);
 }
 
@@ -353,6 +514,16 @@ void WriteDetour(std::uint8_t* entry, const void* hook,
     if (!restored || !flushed) throw std::runtime_error("Cannot finalize native reader detour");
 }
 
+template<std::size_t N>
+const void* FindRoleReturn(const NativeImage& image, std::uint8_t* create,
+    const std::array<std::uint8_t, N>& signature,
+    const std::array<std::uint8_t, N>& mask, std::size_t callOffset) {
+    auto* site = image.FindCode(signature, mask,
+        "Cannot uniquely locate a compatible creature role call after this game update");
+    image.ValidateCallSite(site, N, callOffset, create);
+    return site + callOffset + 5;
+}
+
 void Install(Runtime& state) {
     const NativeImage image;
     auto* read = image.Find(kReadFileSignature, kReadFileSignatureMask,
@@ -360,12 +531,35 @@ void Install(Runtime& state) {
     auto* contains = image.Find(kContainsSignature, kContainsSignatureMask,
         "Cannot uniquely locate a compatible asset availability check after this game update");
     state.allocate = FindAllocator(image, read);
-    // Prepare both forwarding trampolines and ownership checks before changing
-    // either entry. Bootstrap completes before any game-owned code executes.
+    auto* create = image.Find(kCreateUnitSignature, kCreateUnitSignatureMask,
+        "Cannot uniquely locate a compatible native unit creator after this game update");
+    auto* appearance = image.Find(kAppearanceSignature, kAppearanceSignatureMask,
+        "Cannot uniquely locate a compatible visual model updater after this game update");
+    FindInside(image.Function(create, kCreateUnitSignature.size()),
+        kCreateScaleSignature, kCreateScaleSignatureMask);
+    FindInside(image.Function(appearance, kAppearanceSignature.size()),
+        kAppearanceScaleSignature, kAppearanceScaleSignatureMask);
+    state.bossReturn = FindRoleReturn(image, create, kBossCreateCallSignature,
+        kBossCreateCallSignatureMask, kBossCreateCallOffset);
+    state.guardianReturn = FindRoleReturn(image, create, kGuardianCreateCallSignature,
+        kGuardianCreateCallSignatureMask, kGuardianCreateCallOffset);
+    state.ordinaryReturn = FindRoleReturn(image, create, kOrdinaryCreateCallSignature,
+        kOrdinaryCreateCallSignatureMask, kOrdinaryCreateCallOffset);
+    state.wardReturn = FindRoleReturn(image, create, kWardCreateCallSignature,
+        kWardCreateCallSignatureMask, kWardCreateCallOffset);
+    image.ValidateCreatorCallers(create,
+        {state.bossReturn, state.guardianReturn, state.ordinaryReturn, state.wardReturn});
+    // Prepare every forwarding trampoline and structural check before changing
+    // any entry. Bootstrap completes before any game-owned code executes.
     state.original = reinterpret_cast<ReadFunction>(PrepareDetour(image, read, kReadFilePrologue));
     state.originalContains = reinterpret_cast<ContainsFunction>(PrepareDetour(image, contains, kContainsPrologue));
+    state.originalCreate = reinterpret_cast<CreateFunction>(PrepareDetour(image, create, kCreateUnitPrologue));
+    state.originalAppearance = reinterpret_cast<AppearanceFunction>(PrepareDetour(image, appearance, kAppearancePrologue));
     WriteDetour(read, reinterpret_cast<const void*>(&ReadHook), kReadFilePrologue);
     WriteDetour(contains, reinterpret_cast<const void*>(&ContainsHook), kContainsPrologue);
+    WriteDetour(create, reinterpret_cast<const void*>(&CreateHook), kCreateUnitPrologue);
+    WriteDetour(appearance, reinterpret_cast<const void*>(&AppearanceHook), kAppearancePrologue);
+    Log(state, "Installed per-creature visual scaling: bosses/guardians 7x, regular enemies 2x; native combat scale is preserved.");
     Log(state, "Installed unique asset read/availability signatures and verified native byte-vector ownership. No game hash/version allowlist is used.");
 }
 }
