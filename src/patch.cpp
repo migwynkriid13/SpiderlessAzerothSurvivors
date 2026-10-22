@@ -524,13 +524,12 @@ const void* FindRoleReturn(const NativeImage& image, std::uint8_t* create,
     return site + callOffset + 5;
 }
 
-void Install(Runtime& state) {
-    const NativeImage image;
-    auto* read = image.Find(kReadFileSignature, kReadFileSignatureMask,
-        "Cannot uniquely locate a compatible asset reader after this game update");
-    auto* contains = image.Find(kContainsSignature, kContainsSignatureMask,
-        "Cannot uniquely locate a compatible asset availability check after this game update");
-    state.allocate = FindAllocator(image, read);
+struct ScalingHooks {
+    std::uint8_t* create{};
+    std::uint8_t* appearance{};
+};
+
+ScalingHooks PrepareScaling(Runtime& state, const NativeImage& image) {
     auto* create = image.Find(kCreateUnitSignature, kCreateUnitSignatureMask,
         "Cannot uniquely locate a compatible native unit creator after this game update");
     auto* appearance = image.Find(kAppearanceSignature, kAppearanceSignatureMask,
@@ -549,17 +548,45 @@ void Install(Runtime& state) {
         kWardCreateCallSignatureMask, kWardCreateCallOffset);
     image.ValidateCreatorCallers(create,
         {state.bossReturn, state.guardianReturn, state.ordinaryReturn, state.wardReturn});
-    // Prepare every forwarding trampoline and structural check before changing
-    // any entry. Bootstrap completes before any game-owned code executes.
+    auto* originalCreate = PrepareDetour(image, create, kCreateUnitPrologue);
+    void* originalAppearance;
+    try {
+        originalAppearance = PrepareDetour(image, appearance, kAppearancePrologue);
+    } catch (...) {
+        VirtualFree(originalCreate, 0, MEM_RELEASE);
+        throw;
+    }
+    state.originalCreate = reinterpret_cast<CreateFunction>(originalCreate);
+    state.originalAppearance = reinterpret_cast<AppearanceFunction>(originalAppearance);
+    return {create, appearance};
+}
+
+void Install(Runtime& state) {
+    const NativeImage image;
+    auto* read = image.Find(kReadFileSignature, kReadFileSignatureMask,
+        "Cannot uniquely locate a compatible asset reader after this game update");
+    auto* contains = image.Find(kContainsSignature, kContainsSignatureMask,
+        "Cannot uniquely locate a compatible asset availability check after this game update");
+    state.allocate = FindAllocator(image, read);
     state.original = reinterpret_cast<ReadFunction>(PrepareDetour(image, read, kReadFilePrologue));
     state.originalContains = reinterpret_cast<ContainsFunction>(PrepareDetour(image, contains, kContainsPrologue));
-    state.originalCreate = reinterpret_cast<CreateFunction>(PrepareDetour(image, create, kCreateUnitPrologue));
-    state.originalAppearance = reinterpret_cast<AppearanceFunction>(PrepareDetour(image, appearance, kAppearancePrologue));
+
+    // Asset replacement remains mandatory. Size multipliers are optional, and
+    // every scaling contract/trampoline is prepared before any native entry is
+    // changed. Never fall back after a partially installed detour.
+    ScalingHooks scaling;
+    try {
+        scaling = PrepareScaling(state, image);
+    } catch (const std::exception& error) {
+        Log(state, std::string("Size multipliers disabled; crab replacements remain enabled: ") + error.what());
+    }
     WriteDetour(read, reinterpret_cast<const void*>(&ReadHook), kReadFilePrologue);
     WriteDetour(contains, reinterpret_cast<const void*>(&ContainsHook), kContainsPrologue);
-    WriteDetour(create, reinterpret_cast<const void*>(&CreateHook), kCreateUnitPrologue);
-    WriteDetour(appearance, reinterpret_cast<const void*>(&AppearanceHook), kAppearancePrologue);
-    Log(state, "Installed per-creature visual scaling: bosses/guardians 4x, regular enemies 2x; native combat scale is preserved.");
+    if (scaling.create) {
+        WriteDetour(scaling.create, reinterpret_cast<const void*>(&CreateHook), kCreateUnitPrologue);
+        WriteDetour(scaling.appearance, reinterpret_cast<const void*>(&AppearanceHook), kAppearancePrologue);
+        Log(state, "Size multipliers enabled: bosses/guardians 4x, regular enemies 2x; native combat scale is preserved.");
+    }
     Log(state, "Installed unique asset read/availability signatures and verified native byte-vector ownership. No game hash/version allowlist is used.");
 }
 }

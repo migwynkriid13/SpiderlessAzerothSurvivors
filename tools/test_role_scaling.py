@@ -166,12 +166,15 @@ class RoleHookVerificationTests(unittest.TestCase):
                 with self.assertRaises(verify.VerificationError):
                     verify.Image(data[:size])
 
-    def test_profile_masks_only_external_call_displacements(self):
+    def test_profile_masks_only_reviewed_calls_and_non_abi_operands(self):
         path = Path(__file__).resolve().parents[1] / "include" / "target_profile.hpp"
         profile = verify.header_profile(path)
         calls = {"CreateUnit": [107], "Appearance": [88], "BossCreateCall": [49],
                  "GuardianCreateCall": [46], "OrdinaryCreateCall": [50],
                  "WardCreateCall": [34, 53], "CreateScale": [], "AppearanceScale": [16]}
+        non_abi = {"CreateUnit": [(62, 66)],
+                   "GuardianCreateCall": [(8, 9), (57, 61)],
+                   "OrdinaryCreateCall": [(59, 63)]}
         for owner, offsets in calls.items():
             with self.subTest(owner=owner):
                 signature = profile["k" + owner + "Signature"]
@@ -179,7 +182,55 @@ class RoleHookVerificationTests(unittest.TestCase):
                 for offset in offsets:
                     self.assertEqual(signature[offset], 0xE8)
                     expected[offset + 1:offset + 5] = bytes(4)
+                for begin, end in non_abi.get(owner, []):
+                    expected[begin:end] = bytes(end - begin)
                 self.assertEqual(profile["k" + owner + "SignatureMask"], bytes(expected))
+                self.assertTrue(all(match or byte == 0 for byte, match in zip(signature, expected)),
+                                "Masked signature bytes must be zero for the runtime matcher")
+
+    def test_old_and_updated_non_abi_operands_match_the_same_profile(self):
+        path = Path(__file__).resolve().parents[1] / "include" / "target_profile.hpp"
+        profile = verify.header_profile(path)
+        # Authored copies of the bounded public profiles vary only operands
+        # unrelated to the hook ABI: a Game-field displacement, caller stack
+        # local and post-call Game-field displacement. No EXE fixture is needed.
+        changes = {"CreateUnit": [{62: bytes.fromhex("e8040000")},
+                                  {62: bytes.fromhex("e0040000")}],
+                   "GuardianCreateCall": [{8: b"\x18", 57: bytes.fromhex("540a0000")},
+                                          {8: b"\x20", 57: bytes.fromhex("4c0a0000")}],
+                   "OrdinaryCreateCall": [{59: bytes.fromhex("540a0000")},
+                                          {59: bytes.fromhex("4c0a0000")}]}
+        for owner, versions in changes.items():
+            signature = profile["k" + owner + "Signature"]
+            mask = profile["k" + owner + "SignatureMask"]
+            for version, operands in enumerate(versions):
+                with self.subTest(owner=owner, version=version):
+                    actual = bytearray(signature)
+                    for offset, value in operands.items():
+                        actual[offset:offset + len(value)] = value
+                    data, _ = fixture()
+                    write(data, 0x1800, actual)
+                    self.assertEqual(verify.Image(data).unique(signature, mask), 0x1800)
+
+    def test_abi_argument_and_opcode_changes_are_still_rejected(self):
+        path = Path(__file__).resolve().parents[1] / "include" / "target_profile.hpp"
+        profile = verify.header_profile(path)
+        # Creator register captures select R9d display and R8d entry; caller
+        # offsets select the display ID and the fifth argument's scale slot.
+        retained = {"CreateUnit": [0, 39, 40, 43, 54],
+                    "GuardianCreateCall": [0, 4, 34],
+                    "OrdinaryCreateCall": [0, 9, 36]}
+        for owner, offsets in retained.items():
+            signature = profile["k" + owner + "Signature"]
+            mask = profile["k" + owner + "SignatureMask"]
+            for offset in offsets:
+                with self.subTest(owner=owner, offset=offset):
+                    self.assertEqual(mask[offset], 255)
+                    actual = bytearray(signature)
+                    actual[offset] ^= 1
+                    data, _ = fixture()
+                    write(data, 0x1800, actual)
+                    self.assertEqual(verify.Image(data).matches(signature, mask), [])
 
     def test_committed_profile_has_complete_reviewed_prologues(self):
         path = Path(__file__).resolve().parents[1] / "include" / "target_profile.hpp"
