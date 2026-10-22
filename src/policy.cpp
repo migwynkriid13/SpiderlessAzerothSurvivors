@@ -72,8 +72,9 @@ std::uint64_t Mix(std::uint64_t value) {
 }
 }
 
-std::size_t RemapDisplayInfo(std::span<const std::uint8_t> models,
-                           std::span<std::uint8_t> displays, std::uint64_t seed) {
+std::vector<std::uint32_t> RemapDisplayInfo(std::span<const std::uint8_t> models,
+                                          std::span<std::uint8_t> displays,
+                                          std::uint64_t seed) {
     const Table modelTable(models, 16);
     const Table displayTable(displays, 12);
     std::unordered_set<std::uint32_t> spiders;
@@ -116,7 +117,7 @@ std::size_t RemapDisplayInfo(std::span<const std::uint8_t> models,
     }
     if (crabs.size() != 4) throw std::runtime_error("Expected four provisioned Vanilla crab skins");
 
-    std::size_t changed = 0;
+    std::vector<std::uint32_t> changed;
     for (std::uint32_t i = 0; i < displayTable.Count(); ++i) {
         auto* row = displays.data() + kHeader + std::size_t(i) * kDisplayStride;
         if (!spiders.contains(Word(row + 4))) continue;
@@ -126,9 +127,13 @@ std::size_t RemapDisplayInfo(std::span<const std::uint8_t> models,
         for (std::size_t field : {1u, 3u, 6u, 7u, 8u}) {
             std::memcpy(row + field * 4, crab.data() + field * 4, 4);
         }
-        ++changed;
+        changed.push_back(Word(row));
     }
-    if (!changed) throw std::runtime_error("No spider appearances were replaced");
+    if (changed.empty()) throw std::runtime_error("No spider appearances were replaced");
+    std::sort(changed.begin(), changed.end());
+    if (std::adjacent_find(changed.begin(), changed.end()) != changed.end()) {
+        throw std::runtime_error("Duplicate replaced creature display ID");
+    }
     return changed;
 }
 }

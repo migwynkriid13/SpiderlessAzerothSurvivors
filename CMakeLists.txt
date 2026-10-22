@@ -31,7 +31,15 @@ add_library(SpiderlessAzerothSurvivors SHARED
 target_link_libraries(SpiderlessAzerothSurvivors PRIVATE bcrypt user32)
 set_target_properties(SpiderlessAzerothSurvivors PROPERTIES OUTPUT_NAME avrt)
 
-foreach(target IN ITEMS SpiderlessAzerothSurvivors)
+include(CTest)
+set(project_targets SpiderlessAzerothSurvivors)
+if(BUILD_TESTING)
+    add_executable(SpiderlessPolicyTests tests/policy_tests.cpp src/policy.cpp)
+    list(APPEND project_targets SpiderlessPolicyTests)
+    add_test(NAME creature-role-scaling COMMAND SpiderlessPolicyTests)
+endif()
+
+foreach(target IN LISTS project_targets)
     target_compile_features(${target} PRIVATE cxx_std_20)
     set_target_properties(${target} PROPERTIES CXX_EXTENSIONS OFF)
     target_include_directories(${target} PRIVATE src include)
