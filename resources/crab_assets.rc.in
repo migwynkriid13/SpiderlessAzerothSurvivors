@@ -1,0 +1,9 @@
+#include <windows.h>
+
+// Compiled directly into avrt.dll; no external files are opened at runtime.
+100 RCDATA "@CRAB_ASSET_DIR@/Crab.m2"
+101 RCDATA "@CRAB_ASSET_DIR@/CrabSkinBronze.blp"
+102 RCDATA "@CRAB_ASSET_DIR@/CrabSkinIvory.blp"
+103 RCDATA "@CRAB_ASSET_DIR@/CrabSkinSaphire.blp"
+104 RCDATA "@CRAB_ASSET_DIR@/CrabSkinVermillian.blp"
+105 RCDATA "@CRAB_ASSET_DIR@/CrabReflect.blp"
