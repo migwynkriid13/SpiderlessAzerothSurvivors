@@ -4,4 +4,8 @@
 *.exe
 *.pdb
 *.obj
+*.MPQ
+*.mpq
+__pycache__/
+*.pyc
 .DS_Store
