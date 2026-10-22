@@ -15,7 +15,7 @@ inline float ReplacementScale(std::span<const std::uint32_t> replacedDisplays,
                               CreatureRole role) noexcept {
     if (!std::binary_search(replacedDisplays.begin(), replacedDisplays.end(), display) ||
         !std::isfinite(original) || original <= 0.0f) return original;
-    const auto factor = role == CreatureRole::Regular ? 2.0f : 7.0f;
+    const auto factor = role == CreatureRole::Regular ? 2.0f : 4.0f;
     const auto scaled = original * factor;
     return std::isfinite(scaled) ? scaled : original;
 }

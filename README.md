@@ -61,8 +61,8 @@ existing size, including any size adjustment already applied by the game:
 
 | Creature role | Size |
 | --- | --- |
-| Boss | 7× |
-| Lair guardian | 7× |
+| Boss | 4× |
+| Lair guardian | 4× |
 | Ordinary mob, including ordinary elites | 2× |
 
 The role comes from the live creature creation path. A boss and ordinary mob
@@ -120,7 +120,7 @@ py -3 -B -m unittest discover -s tools -p "test_*.py" -v
 ```
 
 The C++ regression target checks catalog-derived replacement IDs, preserved DBC
-metadata, shared appearances with different live roles, 2×/7× multipliers and
+metadata, shared appearances with different live roles, 2×/4× multipliers and
 appearance restoration. It runs in the main build before packaging; the test
 executable is not installed or included in releases.
 

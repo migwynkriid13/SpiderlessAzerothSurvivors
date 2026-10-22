@@ -559,7 +559,7 @@ void Install(Runtime& state) {
     WriteDetour(contains, reinterpret_cast<const void*>(&ContainsHook), kContainsPrologue);
     WriteDetour(create, reinterpret_cast<const void*>(&CreateHook), kCreateUnitPrologue);
     WriteDetour(appearance, reinterpret_cast<const void*>(&AppearanceHook), kAppearancePrologue);
-    Log(state, "Installed per-creature visual scaling: bosses/guardians 7x, regular enemies 2x; native combat scale is preserved.");
+    Log(state, "Installed per-creature visual scaling: bosses/guardians 4x, regular enemies 2x; native combat scale is preserved.");
     Log(state, "Installed unique asset read/availability signatures and verified native byte-vector ownership. No game hash/version allowlist is used.");
 }
 }
