@@ -1,0 +1,633 @@
+{
+  "schema_version": 1,
+  "target_version": "0.110.0",
+  "target_sha256": "e069bf3152f8d8f7160d66388907fc181c733bd170aa150d3b7ff7adf251e048",
+  "target_executed": false,
+  "source": "Installed read-only EXE and Data MPQs; revalidated 2026-10-22. Historical RE catalogs provided table-layout leads only.",
+  "zone_table": {
+    "file_offset": "0x6bec630",
+    "rva": "0x6bed630",
+    "byte_count": 2880,
+    "sha256": "f50a3d64867dd886d8886c6b89565e3b9bac9c120c149545d07fc62925a1dbab"
+  },
+  "catalog_rows_inspected": {
+    "zones": 12,
+    "enemies": 148,
+    "bosses": 60
+  },
+  "dbc": {
+    "archive": "patch.MPQ",
+    "creature_model_data_sha256": "e973e78ea0894d2afc802b06db0ed2d7c77238671df7235e9f744791d54256c9",
+    "creature_display_info_sha256": "aa6dbb0601f5abec1bb21b8ee96bd7f1e695948410835a06f7ab4257c2d4cf8b"
+  },
+  "classification": {
+    "rule": "Case-insensitive model path contains spider, tarantula, cryptfiend or cryptlord",
+    "model_count": 13,
+    "display_count": 120
+  },
+  "models": [
+    {
+      "id": 4,
+      "path": "Creature\\CrystalSpider\\CrystalSpider.mdx",
+      "display_ids": [
+        4
+      ]
+    },
+    {
+      "id": 28,
+      "path": "Creature\\LavaSpider\\LavaSpider.mdx",
+      "display_ids": [
+        151,
+        4447,
+        4448
+      ]
+    },
+    {
+      "id": 30,
+      "path": "Creature\\MineSpider\\MineSpider.mdx",
+      "display_ids": [
+        30,
+        283,
+        368,
+        418,
+        513,
+        538,
+        539,
+        545,
+        659,
+        711,
+        768,
+        955,
+        957,
+        958,
+        959,
+        963,
+        1087,
+        1088,
+        1089,
+        1090,
+        1157,
+        1160,
+        1873,
+        2433,
+        2536,
+        2537,
+        2538,
+        2539,
+        2540,
+        2541,
+        4456,
+        8271,
+        9755,
+        9756,
+        9829,
+        9910,
+        9929,
+        9997,
+        13111,
+        14853,
+        14950,
+        14952,
+        15072,
+        15136,
+        15937,
+        15938,
+        15939
+      ]
+    },
+    {
+      "id": 63,
+      "path": "Creature\\Tarantula\\Tarantula.mdx",
+      "display_ids": [
+        336,
+        366,
+        382,
+        498,
+        520,
+        566,
+        651,
+        709,
+        759,
+        760,
+        821,
+        827,
+        909,
+        910,
+        1091,
+        1103,
+        1104,
+        1989,
+        2424,
+        2542,
+        2543,
+        2544,
+        2545,
+        2546,
+        4457,
+        4458,
+        6073,
+        6213,
+        6214,
+        6808,
+        7510,
+        8014,
+        9934,
+        11348
+      ]
+    },
+    {
+      "id": 250,
+      "path": "Creature\\CryptFiend\\CryptFiend.mdx",
+      "display_ids": [
+        3004,
+        6838,
+        6841,
+        6842,
+        7845,
+        9758,
+        9793,
+        11174,
+        11178,
+        14698,
+        14705,
+        15941,
+        15942,
+        16181
+      ]
+    },
+    {
+      "id": 671,
+      "path": "Creature\\GnomeSpidertank\\GnomeSpiderTank.mdx",
+      "display_ids": [
+        5926,
+        6890,
+        6891,
+        6915
+      ]
+    },
+    {
+      "id": 771,
+      "path": "Creature\\GnomeSpidertank\\GnomeBot.mdx",
+      "display_ids": [
+        6774,
+        6889,
+        7288,
+        8369,
+        8910,
+        14379,
+        15200
+      ]
+    },
+    {
+      "id": 811,
+      "path": "Creature\\GnomeSpidertank\\GnomeAlertBot.mdx",
+      "display_ids": [
+        6888,
+        14473
+      ]
+    },
+    {
+      "id": 851,
+      "path": "Creature\\GnomeSpidertank\\GnomeBomBot.mdx",
+      "display_ids": [
+        6977,
+        8189,
+        8909
+      ]
+    },
+    {
+      "id": 853,
+      "path": "Creature\\GnomeSpidertank\\GnomePounder.mdx",
+      "display_ids": [
+        6980
+      ]
+    },
+    {
+      "id": 892,
+      "path": "Creature\\MineSpider\\MineSpiderBoss.mdx",
+      "display_ids": [
+        7536
+      ]
+    },
+    {
+      "id": 2234,
+      "path": "Creature\\CryptLord\\CryptLord.mdx",
+      "display_ids": [
+        15931,
+        16586
+      ]
+    },
+    {
+      "id": 2243,
+      "path": "Creature\\GiantSpider\\GiantSpider.mdx",
+      "display_ids": [
+        15928
+      ]
+    }
+  ],
+  "crab": {
+    "model_id": 132,
+    "path": "Creature\\Crab\\Crab.mdx",
+    "variants": [
+      {
+        "display_id": 342,
+        "skins": [
+          "CrabSkinBronze",
+          "",
+          ""
+        ],
+        "scale": 1.0
+      },
+      {
+        "display_id": 641,
+        "skins": [
+          "CrabSkinBronze",
+          "",
+          ""
+        ],
+        "scale": 0.8500000238418579
+      },
+      {
+        "display_id": 699,
+        "skins": [
+          "CrabSkinBronze",
+          "",
+          ""
+        ],
+        "scale": 1.5
+      },
+      {
+        "display_id": 979,
+        "skins": [
+          "CrabSkinSaphire",
+          "",
+          ""
+        ],
+        "scale": 1.0
+      },
+      {
+        "display_id": 981,
+        "skins": [
+          "CrabSkinIvory",
+          "",
+          ""
+        ],
+        "scale": 1.0
+      },
+      {
+        "display_id": 996,
+        "skins": [
+          "CrabSkinSaphire",
+          "",
+          ""
+        ],
+        "scale": 0.75
+      },
+      {
+        "display_id": 997,
+        "skins": [
+          "CrabSkinIvory",
+          "",
+          ""
+        ],
+        "scale": 0.75
+      },
+      {
+        "display_id": 998,
+        "skins": [
+          "CrabSkinSaphire",
+          "",
+          ""
+        ],
+        "scale": 0.800000011920929
+      },
+      {
+        "display_id": 999,
+        "skins": [
+          "CrabSkinIvory",
+          "",
+          ""
+        ],
+        "scale": 0.8500000238418579
+      },
+      {
+        "display_id": 1000,
+        "skins": [
+          "CrabSkinSaphire",
+          "",
+          ""
+        ],
+        "scale": 0.8500000238418579
+      },
+      {
+        "display_id": 1001,
+        "skins": [
+          "CrabSkinIvory",
+          "",
+          ""
+        ],
+        "scale": 1.149999976158142
+      },
+      {
+        "display_id": 1307,
+        "skins": [
+          "CrabSkinVermillian",
+          "",
+          ""
+        ],
+        "scale": 0.699999988079071
+      },
+      {
+        "display_id": 1938,
+        "skins": [
+          "CrabSkinVermillian",
+          "",
+          ""
+        ],
+        "scale": 0.8500000238418579
+      },
+      {
+        "display_id": 1939,
+        "skins": [
+          "CrabSkinVermillian",
+          "",
+          ""
+        ],
+        "scale": 1.0
+      },
+      {
+        "display_id": 2239,
+        "skins": [
+          "CrabSkinSaphire",
+          "",
+          ""
+        ],
+        "scale": 0.5
+      },
+      {
+        "display_id": 5557,
+        "skins": [
+          "CrabSkinBronze",
+          "",
+          ""
+        ],
+        "scale": 0.10000000149011612
+      },
+      {
+        "display_id": 5558,
+        "skins": [
+          "CrabSkinIvory",
+          "",
+          ""
+        ],
+        "scale": 0.10000000149011612
+      },
+      {
+        "display_id": 5559,
+        "skins": [
+          "CrabSkinSaphire",
+          "",
+          ""
+        ],
+        "scale": 0.10000000149011612
+      },
+      {
+        "display_id": 5560,
+        "skins": [
+          "CrabSkinVermillian",
+          "",
+          ""
+        ],
+        "scale": 0.10000000149011612
+      },
+      {
+        "display_id": 9565,
+        "skins": [
+          "CrabSkinIvory",
+          "",
+          ""
+        ],
+        "scale": 1.2999999523162842
+      },
+      {
+        "display_id": 9566,
+        "skins": [
+          "CrabSkinSaphire",
+          "",
+          ""
+        ],
+        "scale": 1.149999976158142
+      },
+      {
+        "display_id": 9570,
+        "skins": [
+          "CrabSkinBronze",
+          "",
+          ""
+        ],
+        "scale": 1.149999976158142
+      },
+      {
+        "display_id": 9571,
+        "skins": [
+          "CrabSkinBronze",
+          "",
+          ""
+        ],
+        "scale": 1.2999999523162842
+      },
+      {
+        "display_id": 9573,
+        "skins": [
+          "CrabSkinSaphire",
+          "",
+          ""
+        ],
+        "scale": 1.2999999523162842
+      }
+    ],
+    "mesh_and_four_skins_present_in_installed_mpqs": false
+  },
+  "zone_catalog_matches": [
+    {
+      "zone": "ab",
+      "zone_name": "Arathi Basin",
+      "kind": "enemy",
+      "id": 1501,
+      "name": "Plains Creeper",
+      "display_id": 1103,
+      "model_path": "Creature\\Tarantula\\Tarantula.mdx",
+      "scale": 0.8999999761581421,
+      "eligible_minute": 0.5,
+      "record": {
+        "file_offset": "0x6be45e8",
+        "rva": "0x6be55e8",
+        "byte_count": 80,
+        "sha256": "1a8eb08a2897ca5a71fd0ed8c8da0ff171e947b2f9657b204c83d79db98b81fc"
+      },
+      "elite": false
+    },
+    {
+      "zone": "duskwood",
+      "zone_name": "Duskwood",
+      "kind": "boss",
+      "id": 790,
+      "name": "Naraxis",
+      "display_id": 1091,
+      "model_path": "Creature\\Tarantula\\Tarantula.mdx",
+      "scale": 2.799999952316284,
+      "scheduled_minute": 3.0,
+      "record": {
+        "file_offset": "0x6be2590",
+        "rva": "0x6be3590",
+        "byte_count": 104,
+        "sha256": "b26aa1e1743e01c36178f305a0f7f29176a21853d63af95d523cc5a5e7dac34f"
+      }
+    },
+    {
+      "zone": "duskwood",
+      "zone_name": "Duskwood",
+      "kind": "enemy",
+      "id": 702,
+      "name": "Black Widow Hatchling",
+      "display_id": 1091,
+      "model_path": "Creature\\Tarantula\\Tarantula.mdx",
+      "scale": 0.6000000238418579,
+      "eligible_minute": 1.0,
+      "record": {
+        "file_offset": "0x6be1b70",
+        "rva": "0x6be2b70",
+        "byte_count": 80,
+        "sha256": "cb1fe5242953d1b0680935f825cb38d729780aeef2a6cd568a691b6c5bee0422"
+      },
+      "elite": false
+    },
+    {
+      "zone": "duskwood",
+      "zone_name": "Duskwood",
+      "kind": "enemy",
+      "id": 710,
+      "name": "Carrion Recluse",
+      "display_id": 366,
+      "model_path": "Creature\\Tarantula\\Tarantula.mdx",
+      "scale": 1.7000000476837158,
+      "eligible_minute": 8.5,
+      "record": {
+        "file_offset": "0x6be1df0",
+        "rva": "0x6be2df0",
+        "byte_count": 80,
+        "sha256": "49870977b3da213c597c1ab1daeb4914cb649fd094c8162c6e7ca4dbfe268b21"
+      },
+      "elite": true
+    },
+    {
+      "zone": "elwynn",
+      "zone_name": "Elwynn Forest",
+      "kind": "boss",
+      "id": 691,
+      "name": "Mother Fang",
+      "display_id": 7536,
+      "model_path": "Creature\\MineSpider\\MineSpiderBoss.mdx",
+      "scale": 0.8299999833106995,
+      "scheduled_minute": 6.0,
+      "record": {
+        "file_offset": "0x6be1790",
+        "rva": "0x6be2790",
+        "byte_count": 104,
+        "sha256": "69c2e2860b73494cc3eaabf7d19342a45243a018787e04b0c097503a343fe961"
+      }
+    },
+    {
+      "zone": "naxx",
+      "zone_name": "Naxxramas",
+      "kind": "boss",
+      "id": 1490,
+      "name": "Anub'Rekhan",
+      "display_id": 15931,
+      "model_path": "Creature\\CryptLord\\CryptLord.mdx",
+      "scale": 1.899999976158142,
+      "scheduled_minute": 4.0,
+      "record": {
+        "file_offset": "0x6bec348",
+        "rva": "0x6bed348",
+        "byte_count": 104,
+        "sha256": "596e73168656bc54c1cec2fd400f07b68a2e8b2af3ad81e4f4e24c19633c8a14"
+      }
+    },
+    {
+      "zone": "naxx",
+      "zone_name": "Naxxramas",
+      "kind": "enemy",
+      "id": 1401,
+      "name": "Dread Creeper",
+      "display_id": 15937,
+      "model_path": "Creature\\MineSpider\\MineSpider.mdx",
+      "scale": 0.8500000238418579,
+      "eligible_minute": 0.5,
+      "record": {
+        "file_offset": "0x6beb468",
+        "rva": "0x6bec468",
+        "byte_count": 80,
+        "sha256": "0a64b67b6417f42143d981999731293dd8f1584d536b87832459efa5df2769e3"
+      },
+      "elite": false
+    },
+    {
+      "zone": "naxx",
+      "zone_name": "Naxxramas",
+      "kind": "enemy",
+      "id": 1404,
+      "name": "Carrion Spinner",
+      "display_id": 15938,
+      "model_path": "Creature\\MineSpider\\MineSpider.mdx",
+      "scale": 0.949999988079071,
+      "eligible_minute": 3.0,
+      "record": {
+        "file_offset": "0x6beb558",
+        "rva": "0x6bec558",
+        "byte_count": 80,
+        "sha256": "a219834d396f7441caae3147f83fcd43c59a7cd51aadab6dae61506eca942398"
+      },
+      "elite": false
+    },
+    {
+      "zone": "naxx",
+      "zone_name": "Naxxramas",
+      "kind": "enemy",
+      "id": 1411,
+      "name": "Guardian of Icecrown",
+      "display_id": 16586,
+      "model_path": "Creature\\CryptLord\\CryptLord.mdx",
+      "scale": 1.7000000476837158,
+      "eligible_minute": 13.0,
+      "record": {
+        "file_offset": "0x6beb788",
+        "rva": "0x6bec788",
+        "byte_count": 80,
+        "sha256": "3f113433cf3ee87e2f518239658e0897d5c93273697265b6cbe25643e19dbb9d"
+      },
+      "elite": true
+    }
+  ],
+  "limitations": [
+    "Hashes document researched inputs; DLL does not enforce an EXE hash gate.",
+    "Catalog inspection locates known zone entries; it does not enumerate every runtime producer or establish all-game parity.",
+    "DBC model-based remapping also covers these display rows when used by bosses, guardians, minions, pets or other display consumers. Direct world doodad paths are outside display rows.",
+    "The installed trimmed MPQs lack Crab.m2 and all four crab skins. A full locally owned Vanilla 1.12 data source must supply them through the asset preparer.",
+    "No original game, rebuilt game, DLL or application was built or executed. Visual appearance and animation remain unverified."
+  ],
+  "native_table_layout": {
+    "zone_stride": "0xf0",
+    "enemy_slice_offset": "0x78",
+    "boss_slice_offset": "0x88",
+    "enemy_stride": "0x50",
+    "enemy_name_offset": "0x10",
+    "enemy_id_offset": "0x20",
+    "enemy_display_id_offset": "0x24",
+    "boss_stride": "0x68",
+    "boss_name_offset": "0x00",
+    "boss_id_offset": "0x40",
+    "boss_display_id_offset": "0x44",
+    "note": "Boss rows grew relative to historical 0.97.2 records; current layout checked through all twelve zone slices."
+  }
+}
