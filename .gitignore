@@ -1,0 +1,7 @@
+/build/
+/runtime/
+*.dll
+*.exe
+*.pdb
+*.obj
+.DS_Store
