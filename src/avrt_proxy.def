@@ -1,0 +1,5 @@
+LIBRARY avrt
+EXPORTS
+    AvSetMmThreadCharacteristicsW=SpiderlessAvSetMmThreadCharacteristicsW
+    AvSetMmThreadPriority=SpiderlessAvSetMmThreadPriority
+    AvRevertMmThreadCharacteristics=SpiderlessAvRevertMmThreadCharacteristics

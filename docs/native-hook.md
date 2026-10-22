@@ -68,10 +68,63 @@ copied instructions contains a relative branch or a RIP-relative data address,
 so no instruction relocation is required. Flush the instruction cache after
 writes and preserve/restore page protection.
 
-Install before the main game thread runs. The launcher must synchronously
-complete initialization and verify success before resuming its suspended child.
-No scanning thread should race the catalog loader. Keep the DLL and trampoline
-loaded for the lifetime of the process.
+Install before the game entrypoint executes. The app-local AVRT proxy runs its
+bootstrap after Windows DLL initialization and completes hook installation
+before restoring the original entrypoint context. There is no scanning thread
+or separate launcher. Keep the DLL and trampoline loaded for process lifetime.
+
+## Automatic app-local loading
+
+The current reference EXE directly imports `avrt.dll` with these three names:
+
+| Import | Current IAT RVA |
+| --- | --- |
+| `AvSetMmThreadPriority` | `0x5da55c8` |
+| `AvRevertMmThreadCharacteristics` | `0x5da55d0` |
+| `AvSetMmThreadCharacteristicsW` | `0x5da55d8` |
+
+It does not directly import `version.dll` or `winmm.dll`, and has no delay-import
+directory. The build therefore produces **`avrt.dll`**, forwarding those three
+SDK-typed exports to the real AVRT library loaded by absolute System32 path.
+The loaded real module must differ from the proxy to prevent redirection
+recursion. Before forwarding is ready, wrappers return documented failure
+values with `ERROR_NOT_READY`; they never load libraries from another DLL's
+initialization routine.
+
+Windows' standard unpackaged-app search order looks in the EXE directory before
+System32 after redirection, loaded-module and KnownDLL processing. The design
+relies on this normal app-local resolution; it does not change registry entries,
+DLL search policy, Wine overrides, the installed game or its import table on
+disk. Existing `avrt.dll` mods cannot be chained by this implementation.
+
+`DllMain` validates the mapped AMD64 image, derives the entrypoint from its PE
+header, records its original byte and protection, registers a vectored exception
+handler, and arms an `INT3` at that entrypoint. It does not call LoadLibrary,
+wait on a worker, initialize the mod, or show a User32 error. The current
+reference entrypoint is RVA `0x5c04608`, with first byte `0x48`; those are
+provenance values only. The EXE's current TLS callback list is empty. A changed
+image with executable TLS callbacks must be rejected because game-owned code
+could run before the entrypoint bootstrap.
+
+The handler matches the expected entrypoint and startup thread. It accepts a
+breakpoint context RIP at the entrypoint or immediately after the trap byte.
+It only copies the supplied CPU context into preallocated state, keeps the
+standard `CONTEXT_ALL` flags (the saved buffer has no variable XSTATE tail),
+rewinds its saved RIP to the entrypoint and redirects the returning context
+to a normal bootstrap routine. A normal Win64 incoming stack alignment is
+required before redirecting to C++.
+After the handler returns, bootstrap restores the original byte/protection and
+instruction cache, removes the temporary handler, resolves system AVRT exports,
+initializes the spider mod and restores the saved context with `RtlRestoreContext`.
+Heavy work happens outside both the loader lock and exception handler. Startup
+failures terminate this process; no arbitrary running process is attached.
+
+This follows Microsoft's restrictions for
+[DllMain](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-best-practices)
+and [vectored exception handlers](https://learn.microsoft.com/en-us/windows/win32/api/winnt/nc-winnt-pvectored_exception_handler),
+using [RtlRestoreContext](https://learn.microsoft.com/en-us/windows/win32/api/winnt/nf-winnt-rtlrestorecontext)
+for the final transfer. See also the documented
+[DLL search order](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order).
 
 ## Signature discovery and updates
 
@@ -161,7 +214,9 @@ compiler specification; register and allocation contracts above were checked
 against the actual Win64 instructions and import table, not inferred from its
 parameter labels.
 
-No compilation, DLL injection, game launch, rendered crab validation or Windows
-runtime test has been performed. The catalog's crab entries do not prove the
+The earlier launcher-based implementation compiled successfully in the
+[main build](https://github.com/migwynkriid13/SpiderlessAzerothSurvivors/actions/runs/39852896854).
+The new AVRT proxy and automatic bootstrap have not been compiled or executed.
+No game launch, rendered crab validation or Windows runtime test has been performed. The catalog's crab entries do not prove the
 installed MPQs contain the corresponding mesh/textures. Asset availability
 must be established separately before allowing gameplay to start.

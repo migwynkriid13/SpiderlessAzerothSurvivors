@@ -4,8 +4,10 @@ Windows x64 accessibility mod that replaces spider and spider-like creature
 appearances with randomly selected Vanilla crab colors. Built for the original
 Azeroth Survivors Windows game; this is a DLL mod, not a rebuilt game or Lua addon.
 
-**Status: initial source implementation, awaiting its first Windows build and
-in-game validation.** There is no verified playable release yet.
+**Status: the automatic-loader revision is awaiting its first Windows build and
+in-game validation.** The earlier launcher-based implementation compiled in
+[the main workflow](https://github.com/migwynkriid13/SpiderlessAzerothSurvivors/actions/runs/39852896854);
+that does not validate this new loading path or establish a playable release.
 
 ## What it changes
 
@@ -45,33 +47,40 @@ refuses to overwrite a different existing output. See
 formats. Extraction against real crab assets remains unverified because those
 assets were absent from the available local data.
 
-## Install and run after a build
+## Install and run after a release
 
-1. Extract the build package. Place `SpiderlessLauncher.exe` and
-   `SpiderlessAzerothSurvivors.dll` beside `AzerothSurvivors.exe`.
-2. Install the prepared `Data/patch-Z.MPQ` as described above.
-3. Start `SpiderlessLauncher.exe` each time you want the replacement enabled.
+1. Download **`avrt.dll`** from the repository's
+   [GitHub Releases](https://github.com/migwynkriid13/SpiderlessAzerothSurvivors/releases).
+2. Put it beside `AzerothSurvivors.exe`. Keep its exact filename `avrt.dll`.
+3. Install the prepared `Data/patch-Z.MPQ` described above.
+4. Start **`AzerothSurvivors.exe` normally**.
 
-Alternatively, keep the launcher and DLL together elsewhere and supply the game:
+No separate launcher, DLL list, injector, EXE modification or administrator
+rights are needed. The DLL uses the Windows AVRT library name already imported
+by the game, forwarding the three required AVRT functions to the real system
+library. Windows normally searches the EXE directory before System32 for this
+library. Custom DLL search policies, Wine overrides or another mod using
+`avrt.dll` can affect loading; do not overwrite a different existing `avrt.dll`.
+There is no mod-chaining support in this version.
 
-```powershell
-.\SpiderlessLauncher.exe "D:\AzerothSurvivors\AzerothSurvivors.exe"
-```
-
-The launcher starts a new game process, waits for Windows initialization, pauses
-at the game entrypoint, loads and initializes the DLL, then resumes the game.
-It stops its own new child if initialization fails. Use this launcher instead of
-adding the DLL to `dlls.txt`; the DLL deliberately does no work in `DllMain`.
-Administrator rights and attaching to an already running game are unnecessary.
-Additional game command-line arguments are not currently supported.
+During load, the proxy arms a temporary breakpoint at the EXE's entrypoint.
+After Windows finishes DLL initialization, a minimal exception handler redirects
+execution to a normal bootstrap function. That function restores the entrypoint,
+loads the real system AVRT library, initializes the spider replacement, then
+restores the game's original CPU context. Initialization runs before the game
+entrypoint and outside both `DllMain` and the exception handler.
 
 `SpiderlessAzerothSurvivors.log` is created beside the game EXE, so that directory
 must be writable. On the first creature catalog read, the mod checks the crab
-mesh and four skins through the game's actual MPQ chain before remapping rows.
-Missing assets or incompatible tables stop the game with an error.
+mesh and four skins through the actual MPQ chain before remapping rows. Missing
+assets or incompatible tables stop the game with an error. Startup failures
+that occur before the bootstrap runs may produce Windows' DLL initialization
+error instead; no log is guaranteed in that early failure case.
 
-Remove the launcher, mod DLL and this mod's `patch-Z.MPQ` to uninstall. The mod
-does not edit the original EXE, game saves or original MPQs.
+Remove this mod's `avrt.dll` and `patch-Z.MPQ` to uninstall. Do not place the
+proxy in Windows' system directories. The mod changes process memory only; it
+does not edit the original EXE, saves or original MPQs. The crab overlay remains
+required: a DLL filename alone cannot supply assets absent from the game data.
 
 ## Game updates
 
@@ -88,14 +97,16 @@ ABI and its limits. Reference hashes there identify research inputs only.
 
 ## Build and contribute
 
-Development happens in pull requests. GitHub Actions builds the DLL and launcher
+Development happens in pull requests. GitHub Actions builds the DLL and
+publishes a GitHub Release
 **only on pushes to `main`**, including merged PRs. PR pushes and PR creation do
-not start a build; there is no manual workflow trigger. This lets the initial
-implementation be reviewed before the first build.
+not start a build; there is no manual workflow trigger. Each revision can be
+reviewed before its main-branch build.
 
-After a main build, download the Windows x64 artifact from the repository's
-Actions page. It contains the DLL, launcher, instructions, asset tool, source
-commit/build link and SHA-256 checksums. No crab assets are included.
+After a successful main build, its GitHub Release contains standalone
+`avrt.dll`, a ZIP with the DLL/instructions/asset tools, and SHA-256 checksums.
+Each release points to its exact source commit and build. The same files remain
+available as an Actions artifact. No crab assets are included.
 
 For a deliberate local build on Windows, install Visual Studio 2022 or newer
 with Desktop development with C++, its Windows SDK, and CMake 3.25 or newer:
@@ -113,6 +124,9 @@ run without compilation or game data:
 py -3 -B -m unittest discover -s tools -p "test_*.py" -v
 ```
 
-Before calling a binary playable, validate injection, all four crab skins,
-animations, giant/boss scaling and the affected zones on Windows. No compilation,
-DLL injection, game launch or visual validation was performed for this initial PR.
+Before calling a binary playable, validate automatic loading and AVRT
+forwarding, all four crab skins, animations, giant/boss scaling and the affected
+zones on Windows. The automatic-loader revision has not been compiled or run
+yet. No game launch or visual validation has been performed. The successful
+earlier launcher build does not test this proxy, breakpoint bootstrap or AVRT
+forwarding.

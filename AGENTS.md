@@ -2,9 +2,12 @@
 
 - Make changes on a feature branch and deliver them through a pull request.
   Do not merge or push implementation changes directly to `main` unless asked.
-- Build CI runs only on pushes to `main`. Do not add PR or manual build triggers
-  without a user request. The initial implementation is reviewed before its
-  first build; report unrun compilation and runtime validation accurately.
+- Build/release CI runs only on pushes to `main`. Do not add PR or manual build
+  triggers without a user request. Deliver source changes in a PR before the
+  main build; report compilation and runtime validation accurately.
+- The install is app-local `avrt.dll` beside `AzerothSurvivors.exe`, with normal
+  EXE startup. Do not reintroduce a separate launcher or require a DLL list.
+  Publish the standalone DLL, ZIP and checksums through GitHub Releases.
 - Do not gate the mod on a particular EXE hash or version. Game updates are
   frequent. Discover compatible hook signatures and validate native structure;
   stop safely when compatibility cannot be established.

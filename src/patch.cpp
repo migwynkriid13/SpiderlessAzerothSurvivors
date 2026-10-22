@@ -229,14 +229,14 @@ void Install(Runtime& state) {
 }
 }
 
-extern "C" __declspec(dllexport) DWORD WINAPI SpiderlessInitialize(void*) noexcept {
+extern "C" DWORD WINAPI SpiderlessInitialize(void*) noexcept {
     using namespace spiderless;
     unsigned expected = 0;
     if (!g_initialize.compare_exchange_strong(expected, 1)) {
         return expected == 2 ? ERROR_SUCCESS : ERROR_ALREADY_INITIALIZED;
     }
-    // DllMain never installs a hook. The supported launcher keeps the game's
-    // primary thread suspended at its entrypoint during this exported call.
+    // The entrypoint bootstrap calls this outside the loader lock and exception
+    // handler, before restoring the game's original entrypoint context.
     auto* state = new (std::nothrow) Runtime;
     if (!state) return ERROR_OUTOFMEMORY;
     g_runtime = state;
